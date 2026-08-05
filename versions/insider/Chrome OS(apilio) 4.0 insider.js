@@ -1,0 +1,2410 @@
+// ==UserScript==
+// @name         网页模拟桌面系统 (Web OS) - 终极优化版(apilio) 4.0 Insider
+// @namespace    http://tampermonkey.net/
+// @version      4.0
+// @description  新增 AI 对话特殊符号支持、Ctrl+Enter 换行、侧边栏折叠收起功能、色调选择、窗口记忆、刷新后自动恢复桌面模式、Snippets、浅色模式、最小化/全屏、未匹配括号标红、AI Markdown渲染、对话保留/删除。
+// @author       cmq
+// @match        *://*/*
+// @grant        GM_xmlhttpRequest
+// @connect      ce.judge0.com
+// @connect      api.judge0.com
+// @connect      api.apilio.ai
+// @run-at        document-end
+// @require https://cdn.jsdelivr.net/npm/marked/marked.min.js
+// @require https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js
+// ==/UserScript==
+(function() {
+    // 提示！本版本为Insider，不确定功能完善！
+    'use strict';
+    // ===== 密码系统 =====
+    // ===== 密码系统 =====
+    let _pwd = localStorage.getItem('OS_PWD');
+    if (_pwd === null) _pwd = '123456';
+    let _fail = +(localStorage.getItem('OS_FAIL') || 0);
+    let _lockUntil = +(localStorage.getItem('OS_LOCK_UNTIL') || 0);
+    // 如果还在锁定期间，不需要做什么特殊处理，requestDesktop 里会检查
+    if (_fail >= 5 && Date.now() >= _lockUntil) {
+        // 锁定时间已过，重置错误计数
+        _fail = 0;
+        localStorage.setItem('OS_FAIL', '0');
+        localStorage.removeItem('OS_LOCK_UNTIL');
+    }
+// 密码验证函数，点击"进入桌面模式"时调用
+function requestDesktop(callback) {
+    // 密码为空，免密进入
+    if (_pwd === '') {
+        callback();
+        return;
+    }
+    // 检查是否在锁定期间
+    if (_fail >= 5) {
+        let _lockUntil = +(localStorage.getItem('OS_LOCK_UNTIL') || 0);
+        if (Date.now() < _lockUntil) {
+            let remainSec = Math.ceil((_lockUntil - Date.now()) / 1000);
+            alert('🔒 密码错误次数过多，请等待 ' + remainSec + ' 秒后再试！');
+            return;
+        } else {
+            // 锁定时间已过，重置
+            _fail = 0;
+            localStorage.setItem('OS_FAIL', '0');
+            localStorage.removeItem('OS_LOCK_UNTIL');
+        }
+    }
+    // 检查是否在免密时间内
+    let _freeUntil = +(localStorage.getItem('OS_FREE_UNTIL') || 0);
+    if (Date.now() < _freeUntil) {
+        callback();
+        return;
+    }
+    localStorage.removeItem('OS_FREE_UNTIL');
+
+    // 创建遮罩层
+    let overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:2147483647;display:flex;align-items:center;justify-content:center;';
+
+    // 创建弹窗
+    let box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:12px;padding:30px 40px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,0.3);font-family:system-ui;min-width:300px;';
+
+    // 标题
+    let title = document.createElement('div');
+    title.textContent = '🔒 请输入密码';
+    title.style.cssText = 'font-size:18px;font-weight:bold;margin-bottom:20px;color:#333;';
+
+    // 提示信息
+    let hint = document.createElement('div');
+    hint.style.cssText = 'font-size:13px;color:#e74c3c;margin-bottom:12px;min-height:18px;';
+
+    // 密码输入框
+    let input = document.createElement('input');
+    input.type = 'password';
+    input.placeholder = '请输入密码';
+    input.style.cssText = 'width:100%;padding:10px 14px;border:2px solid #ddd;border-radius:8px;font-size:16px;outline:none;box-sizing:border-box;letter-spacing:4px;transition:border-color 0.2s;';
+    input.onfocus = function() { this.style.borderColor = '#4285f4'; };
+    input.onblur = function() { this.style.borderColor = '#ddd'; };
+
+    // 免密选项行
+    let freeRow = document.createElement('div');
+    freeRow.style.cssText = 'margin-top:14px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;color:#666;';
+
+    let freeCheck = document.createElement('input');
+    freeCheck.type = 'checkbox';
+    freeCheck.id = 'os_free_check';
+    freeCheck.style.cssText = 'cursor:pointer;';
+
+    let freeLabel = document.createElement('label');
+    freeLabel.htmlFor = 'os_free_check';
+    freeLabel.textContent = '免密';
+    freeLabel.style.cssText = 'cursor:pointer;';
+
+    let freeTime = document.createElement('select');
+    freeTime.style.cssText = 'border:1px solid #ddd;border-radius:4px;padding:2px 6px;font-size:13px;cursor:pointer;outline:none;';
+    freeTime.innerHTML = '<option value="30">30分钟</option><option value="60">60分钟</option><option value="120">120分钟</option>';
+    freeTime.disabled = true;
+
+    freeCheck.onchange = function() { freeTime.disabled = !this.checked; };
+
+    freeRow.appendChild(freeCheck);
+    freeRow.appendChild(freeLabel);
+    freeRow.appendChild(freeTime);
+
+    // 按钮行
+    let btnRow = document.createElement('div');
+    btnRow.style.cssText = 'margin-top:16px;display:flex;gap:10px;';
+
+    // 取消按钮
+    let cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '取消';
+    cancelBtn.style.cssText = 'flex:1;padding:10px 0;background:#eee;color:#666;border:none;border-radius:8px;font-size:15px;cursor:pointer;transition:background 0.2s;';
+    cancelBtn.onmouseover = function() { this.style.background = '#ddd'; };
+    cancelBtn.onmouseout = function() { this.style.background = '#eee'; };
+    cancelBtn.onclick = function() { overlay.remove(); };
+
+    // 确认按钮
+    let btn = document.createElement('button');
+    btn.textContent = '确认';
+    btn.style.cssText = 'flex:1;padding:10px 0;background:#4285f4;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;transition:background 0.2s;';
+    btn.onmouseover = function() { this.style.background = '#3367d6'; };
+    btn.onmouseout = function() { this.style.background = '#4285f4'; };
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(btn);
+
+    // 组装
+    box.appendChild(title);
+    box.appendChild(hint);
+    box.appendChild(input);
+    box.appendChild(freeRow);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+    document.documentElement.appendChild(overlay);
+    input.focus();
+
+    // 验证函数
+    function checkPwd() {
+    // —— 先检查是否在锁定期间 ——
+    let _lockUntil = +(localStorage.getItem('OS_LOCK_UNTIL') || 0);
+    if (_fail >= 5 && Date.now() < _lockUntil) {
+        let remainSec = Math.ceil((_lockUntil - Date.now()) / 1000);
+        hint.textContent = '🔒 请等待 ' + Math.ceil(remainSec / 60) + ' 分 ' + (remainSec % 60) + ' 秒后再试';
+        return;
+    }
+    // 锁定已过，重置计数
+    if (_fail >= 5 && Date.now() >= _lockUntil) {
+        _fail = 0;
+        localStorage.setItem('OS_FAIL', '0');
+        localStorage.removeItem('OS_LOCK_UNTIL');
+    }
+
+    let a = input.value;
+    if (a === _pwd) {
+        _fail = 0;
+        localStorage.setItem('OS_FAIL', '0');
+        localStorage.removeItem('OS_LOCK_COUNT');
+        localStorage.removeItem('OS_LOCK_UNTIL');
+        if (freeCheck.checked) {
+            let mins = +freeTime.value;
+            let until = Date.now() + mins * 60 * 1000;
+            localStorage.setItem('OS_FREE_UNTIL', until);
+        }
+        overlay.remove();
+        callback();
+    } else {
+        _fail++;
+        localStorage.setItem('OS_FAIL', _fail);
+        if (_fail >= 5) {
+            // 计算锁定时间：第1次锁定1分钟，之后每次×2
+            let lockCount = +(localStorage.getItem('OS_LOCK_COUNT') || 0) + 1;
+            localStorage.setItem('OS_LOCK_COUNT', lockCount);
+            let lockMinutes = 1;
+            for (let i = 1; i < lockCount; i++) lockMinutes *= 2;
+            let lockMs = lockMinutes * 60 * 1000;
+            _lockUntil = Date.now() + lockMs;
+            localStorage.setItem('OS_LOCK_UNTIL', _lockUntil);
+            hint.textContent = '🔒 密码错误5次！已锁定 ' + lockMinutes + ' 分钟';
+            input.value = '';
+            input.style.borderColor = '#e74c3c';
+            input.disabled = true;
+            btn.disabled = true;
+            // 倒计时解锁
+            let lockTimer = setInterval(function() {
+                let remaining = Math.ceil((_lockUntil - Date.now()) / 1000);
+                if (remaining <= 0) {
+                    clearInterval(lockTimer);
+                    _fail = 0;
+                    localStorage.setItem('OS_FAIL', '0');
+                    localStorage.removeItem('OS_LOCK_UNTIL');
+                    input.disabled = false;
+                    btn.disabled = false;
+                    input.value = '';
+                    input.style.borderColor = '#ddd';
+                    hint.textContent = '🔓 锁定已解除，请重新输入密码';
+                    input.focus();
+                } else {
+                    let m = Math.floor(remaining / 60);
+                    let s = remaining % 60;
+                    hint.textContent = '🔒 已锁定 ' + lockMinutes + ' 分钟（剩余 ' + m + ' 分 ' + s + ' 秒）';
+                }
+            }, 1000);
+        } else {
+            hint.textContent = '❌ 密码错误！还剩 ' + (5 - _fail) + ' 次机会';
+            input.value = '';
+            input.style.borderColor = '#e74c3c';
+            setTimeout(function() { input.style.borderColor = '#ddd'; }, 1000);
+        }
+    }
+}
+
+    btn.onclick = checkPwd;
+    input.onkeydown = function(e) { if (e.key === 'Enter') checkPwd(); };
+}
+    if (window.top !== window.self) return;
+    // --- 1. 核心持久化数据中心 ---
+    let DEFAULT_OS_DATA = {
+        files: [
+            { id: 'f1', name: 'README.txt', type: 'txt', content: '欢迎来到优化版 Web OS！\n\n【功能列表】\n1. AI 终端支持输入 < > () 等编程符号！\n2. AI 终端输入框支持 Ctrl+Enter 快捷换行。\n3. 左侧边栏小箭头可折叠/展开侧边栏。\n4. 支持选择系统色调，含浅色模式！\n5. 支持窗口记忆，刷新后窗口不消失！\n6. C++ Snippets 快速插入（55+代码片段）！\n7. 括号自动补全 + 闭合跳过 + 配对删除！\n8. 未匹配括号实时标红（浅色模式标蓝）！\n9. 窗口最小化/全屏/还原！\n10. Word/Excel 真实格式下载！\n11. AI 回复 Markdown 渲染！\n12. AI 对话保留/删除功能！\n13. Markdown 文件创建与预览！' },
+            { id: 'f2', name: 'main.cpp', type: 'cpp', content: '#include <iostream>\nusing namespace std;\n\nint main() {\n    int a, b;\n    cout << "请输入两个整数（在右侧输入框填写，用空格隔开）：" << endl;\n    if (cin >> a >> b) {\n        cout << "👉 远程编译计算结果：" << a << " + " << b << " = " << (a + b) << endl;\n    } else {\n        cout << "⚠️ 未检测到有效的输入数据！" << endl;\n    }\n    return 0;\n}' },
+            { id: 'f3', name: '季度财务核算.xlsx', type: 'xlsx', content: [["指标项目","第一季度","第二季度","环比增长"],["业务营收","89000","104000","16.8%"]] },
+            { id: 'f4', name: '商业计划书.docx', type: 'docx', content: '<div><font size="5"><b>智能系统深度重构计划</b></font></div>' }
+        ],
+        settings: {
+            blur: 10, brightness: 40, apiKey: '',
+            activeModel: 'gpt-4o', modelList: ['gpt-4o', 'gpt-3.5-turbo', 'claude-3-5-sonnet'],
+            theme: 'default', customAccentColor: '', rememberWindows: false, autoRestoreDesktop: false
+        },
+        openWindows: [],
+        desktopActive: false,
+        settingsOpen: false,
+        aiConversations: []
+    };
+
+    let OS_DATA = JSON.parse(localStorage.getItem('MOCK_OS_DATA_V13')) || DEFAULT_OS_DATA;
+
+    if (!OS_DATA.settings.theme) OS_DATA.settings.theme = 'default';
+    if (OS_DATA.settings.rememberWindows === undefined) OS_DATA.settings.rememberWindows = false;
+    if (OS_DATA.settings.autoRestoreDesktop === undefined) OS_DATA.settings.autoRestoreDesktop = false;
+    if (!OS_DATA.openWindows) OS_DATA.openWindows = [];
+    if (OS_DATA.desktopActive === undefined) OS_DATA.desktopActive = false;
+    if (!OS_DATA.aiConversations) OS_DATA.aiConversations = [];
+    if (OS_DATA.settings.customAccentColor === undefined) OS_DATA.settings.customAccentColor = '';
+    if (OS_DATA.settingsOpen === undefined) OS_DATA.settingsOpen = false;
+    if (OS_DATA.settings.model) {
+        OS_DATA.settings.activeModel = OS_DATA.settings.model;
+        OS_DATA.settings.modelList = ['gpt-4o', 'gpt-3.5-turbo', OS_DATA.settings.model];
+        delete OS_DATA.settings.model;
+        saveSystemData();
+    }
+
+    let saveTimer = null;
+    function saveSystemData() {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => { localStorage.setItem('MOCK_OS_DATA_V13', JSON.stringify(OS_DATA)); }, 300);
+    }
+    function saveSystemDataNow() {
+        clearTimeout(saveTimer);
+        localStorage.setItem('MOCK_OS_DATA_V13', JSON.stringify(OS_DATA));
+    }
+
+    let zIndexCounter = 200000;
+
+    // --- 简易 Markdown 渲染 ---
+    function renderMarkdown(text) {
+        if (typeof marked !== 'undefined') {
+            try { return marked.parse(text); } catch(e) {}
+        }
+        let html = escapeHTML(text);
+        html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (m, lang, code) => {
+            return `<pre style="background:rgba(0,0,0,0.3);padding:12px;border-radius:6px;overflow-x:auto;margin:8px 0;border:1px solid rgba(255,255,255,0.1);"><code>${code.trim()}</code></pre>`;
+        });
+        html = html.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:3px;font-family:Consolas,monospace;font-size:0.9em;">$1</code>');
+        html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+        html = html.replace(/\*(.+?)\*/g, '<i>$1</i>');
+        html = html.replace(/\n/g, '<br>');
+        return html;
+    }
+
+    function escapeHTML(str) { return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    // --- 色调主题定义 ---
+    const THEMES = {
+        default: {
+            label: '🌙 默认深色',
+            sidebarBg: 'rgba(40, 40, 45, 0.4)', taskbarBg: 'rgba(25, 25, 30, 0.8)',
+            winBg: '#1e1e1e', winHeader: '#2d2d2d', winBorder: '#444', winBorderBottom: '#3c3c3c',
+            statusBarBg: '#007acc', accentColor: '#0078d4', accentHover: '#106ebe',
+            entryBtnBg: '#0078d4', entryBtnHover: '#106ebe',
+            sidebarToggleBg: 'rgba(40, 40, 45, 0.9)', sidebarToggleHoverBg: 'rgba(80, 80, 85, 0.9)',
+            textPrimary: '#ddd', textSecondary: '#aaa',
+            terminalBg: '#141414', codeGutterBorder: '#2d2d2d', codeGutterColor: '#858585', codeGutterBg: '#1e1e1e',
+            terminalGreen: '#33ff33', stdinBg: '#1c1c1c', stdinBorder: '#2d2d2d', stdinTitleBg: '#252526', stdinColor: '#ffb3ff',
+            inputBg: '#3c3c3c', inputBorder: '#555', settingsBodyBg: '#252526', vsTabBg: '#2d2d2d', vsTabBorder: '#252526',
+            bracketUnmatchedColor: '#ff3333', taskbarMinBtnBg: 'rgba(255,255,255,0.08)', taskbarMinBtnHoverBg: 'rgba(255,255,255,0.15)',
+            aiBubbleUser: 'rgba(0,120,212,0.15)', aiBubbleAI: 'rgba(78,201,176,0.08)'
+        },
+        blue: {
+            label: '🔵 蓝色海洋',
+            sidebarBg: 'rgba(20, 40, 80, 0.45)', taskbarBg: 'rgba(10, 25, 55, 0.85)',
+            winBg: '#0d1b2a', winHeader: '#1b2838', winBorder: '#2a4a7f', winBorderBottom: '#1e3a5f',
+            statusBarBg: '#1565c0', accentColor: '#42a5f5', accentHover: '#1e88e5',
+            entryBtnBg: '#1565c0', entryBtnHover: '#0d47a1',
+            sidebarToggleBg: 'rgba(20, 40, 80, 0.9)', sidebarToggleHoverBg: 'rgba(30, 60, 110, 0.9)',
+            textPrimary: '#bbdefb', textSecondary: '#90caf9',
+            terminalBg: '#0a1628', codeGutterBorder: '#1b2838', codeGutterColor: '#5c8bc4', codeGutterBg: '#0d1b2a',
+            terminalGreen: '#64ffda', stdinBg: '#0f1f35', stdinBorder: '#1b2838', stdinTitleBg: '#1b2838', stdinColor: '#80d8ff',
+            inputBg: '#1b2838', inputBorder: '#2a4a7f', settingsBodyBg: '#0d1b2a', vsTabBg: '#1b2838', vsTabBorder: '#152238',
+            bracketUnmatchedColor: '#ff3333', taskbarMinBtnBg: 'rgba(255,255,255,0.08)', taskbarMinBtnHoverBg: 'rgba(255,255,255,0.15)',
+            aiBubbleUser: 'rgba(66,165,245,0.15)', aiBubbleAI: 'rgba(100,255,218,0.08)'
+        },
+        purple: {
+            label: '🟣 紫色梦幻',
+            sidebarBg: 'rgba(45, 20, 70, 0.45)', taskbarBg: 'rgba(30, 10, 50, 0.85)',
+            winBg: '#1a0a2e', winHeader: '#2d1b4e', winBorder: '#6a3d9a', winBorderBottom: '#3c2060',
+            statusBarBg: '#7b1fa2', accentColor: '#ab47bc', accentHover: '#8e24aa',
+            entryBtnBg: '#7b1fa2', entryBtnHover: '#6a1b9a',
+            sidebarToggleBg: 'rgba(45, 20, 70, 0.9)', sidebarToggleHoverBg: 'rgba(65, 30, 100, 0.9)',
+            textPrimary: '#e1bee7', textSecondary: '#ce93d8',
+            terminalBg: '#0d0520', codeGutterBorder: '#2d1b4e', codeGutterColor: '#9c7cbf', codeGutterBg: '#1a0a2e',
+            terminalGreen: '#ea80fc', stdinBg: '#160830', stdinBorder: '#2d1b4e', stdinTitleBg: '#2d1b4e', stdinColor: '#ea80fc',
+            inputBg: '#2d1b4e', inputBorder: '#6a3d9a', settingsBodyBg: '#1a0a2e', vsTabBg: '#2d1b4e', vsTabBorder: '#200e3a',
+            bracketUnmatchedColor: '#ff3333', taskbarMinBtnBg: 'rgba(255,255,255,0.08)', taskbarMinBtnHoverBg: 'rgba(255,255,255,0.15)',
+            aiBubbleUser: 'rgba(171,71,188,0.15)', aiBubbleAI: 'rgba(234,128,252,0.08)'
+        },
+        green: {
+            label: '🟢 绿色森林',
+            sidebarBg: 'rgba(20, 50, 30, 0.45)', taskbarBg: 'rgba(10, 35, 20, 0.85)',
+            winBg: '#0a1f0d', winHeader: '#1b3a1e', winBorder: '#2e7d32', winBorderBottom: '#1e5520',
+            statusBarBg: '#2e7d32', accentColor: '#4caf50', accentHover: '#388e3c',
+            entryBtnBg: '#2e7d32', entryBtnHover: '#1b5e20',
+            sidebarToggleBg: 'rgba(20, 50, 30, 0.9)', sidebarToggleHoverBg: 'rgba(30, 70, 40, 0.9)',
+            textPrimary: '#c8e6c9', textSecondary: '#a5d6a7',
+            terminalBg: '#051508', codeGutterBorder: '#1b3a1e', codeGutterColor: '#6abf6e', codeGutterBg: '#0a1f0d',
+            terminalGreen: '#69f0ae', stdinBg: '#0d1f10', stdinBorder: '#1b3a1e', stdinTitleBg: '#1b3a1e', stdinColor: '#b9f6ca',
+            inputBg: '#1b3a1e', inputBorder: '#2e7d32', settingsBodyBg: '#0a1f0d', vsTabBg: '#1b3a1e', vsTabBorder: '#12301a',
+            bracketUnmatchedColor: '#ff3333', taskbarMinBtnBg: 'rgba(255,255,255,0.08)', taskbarMinBtnHoverBg: 'rgba(255,255,255,0.15)',
+            aiBubbleUser: 'rgba(76,175,80,0.15)', aiBubbleAI: 'rgba(105,240,174,0.08)'
+        },
+        amber: {
+            label: '🟠 琥珀暖阳',
+            sidebarBg: 'rgba(50, 35, 10, 0.45)', taskbarBg: 'rgba(40, 25, 5, 0.85)',
+            winBg: '#1a1200', winHeader: '#33260a', winBorder: '#8d6e24', winBorderBottom: '#5a4210',
+            statusBarBg: '#e65100', accentColor: '#ff9800', accentHover: '#f57c00',
+            entryBtnBg: '#e65100', entryBtnHover: '#bf360c',
+            sidebarToggleBg: 'rgba(50, 35, 10, 0.9)', sidebarToggleHoverBg: 'rgba(70, 50, 15, 0.9)',
+            textPrimary: '#ffe0b2', textSecondary: '#ffcc80',
+            terminalBg: '#0f0b00', codeGutterBorder: '#33260a', codeGutterColor: '#bf9b4f', codeGutterBg: '#1a1200',
+            terminalGreen: '#ffd54f', stdinBg: '#1a1508', stdinBorder: '#33260a', stdinTitleBg: '#33260a', stdinColor: '#ffe082',
+            inputBg: '#33260a', inputBorder: '#8d6e24', settingsBodyBg: '#1a1200', vsTabBg: '#33260a', vsTabBorder: '#241a05',
+            bracketUnmatchedColor: '#ff3333', taskbarMinBtnBg: 'rgba(255,255,255,0.08)', taskbarMinBtnHoverBg: 'rgba(255,255,255,0.15)',
+            aiBubbleUser: 'rgba(255,152,0,0.15)', aiBubbleAI: 'rgba(255,213,79,0.08)'
+        },
+        red: {
+            label: '🔴 赤焰红',
+            sidebarBg: 'rgba(50, 15, 15, 0.45)', taskbarBg: 'rgba(40, 10, 10, 0.85)',
+            winBg: '#1a0808', winHeader: '#331515', winBorder: '#8b2020', winBorderBottom: '#5a1515',
+            statusBarBg: '#c62828', accentColor: '#ef5350', accentHover: '#d32f2f',
+            entryBtnBg: '#c62828', entryBtnHover: '#b71c1c',
+            sidebarToggleBg: 'rgba(50, 15, 15, 0.9)', sidebarToggleHoverBg: 'rgba(70, 20, 20, 0.9)',
+            textPrimary: '#ffcdd2', textSecondary: '#ef9a9a',
+            terminalBg: '#0f0505', codeGutterBorder: '#331515', codeGutterColor: '#bf6060', codeGutterBg: '#1a0808',
+            terminalGreen: '#ff8a80', stdinBg: '#1a0a0a', stdinBorder: '#331515', stdinTitleBg: '#331515', stdinColor: '#ff8a80',
+            inputBg: '#331515', inputBorder: '#8b2020', settingsBodyBg: '#1a0808', vsTabBg: '#331515', vsTabBorder: '#240a0a',
+            bracketUnmatchedColor: '#ff3333', taskbarMinBtnBg: 'rgba(255,255,255,0.08)', taskbarMinBtnHoverBg: 'rgba(255,255,255,0.15)',
+            aiBubbleUser: 'rgba(239,83,80,0.15)', aiBubbleAI: 'rgba(255,138,128,0.08)'
+        },
+        light: {
+            label: '☀️ 浅色模式',
+            sidebarBg: 'rgba(230, 230, 235, 0.75)', taskbarBg: 'rgba(210, 210, 215, 0.88)',
+            winBg: '#ffffff', winHeader: '#f3f3f3', winBorder: '#d4d4d4', winBorderBottom: '#e0e0e0',
+            statusBarBg: '#007acc', accentColor: '#0078d4', accentHover: '#106ebe',
+            entryBtnBg: '#0078d4', entryBtnHover: '#106ebe',
+            sidebarToggleBg: 'rgba(210, 210, 215, 0.95)', sidebarToggleHoverBg: 'rgba(190, 190, 195, 0.95)',
+            textPrimary: '#333', textSecondary: '#666',
+            terminalBg: '#f9f9f9', codeGutterBorder: '#e0e0e0', codeGutterColor: '#999', codeGutterBg: '#f5f5f5',
+            terminalGreen: '#008000', stdinBg: '#f0f0f0', stdinBorder: '#d4d4d4', stdinTitleBg: '#e8e8e8', stdinColor: '#8b008b',
+            inputBg: '#fff', inputBorder: '#ccc', settingsBodyBg: '#f5f5f5', vsTabBg: '#f0f0f0', vsTabBorder: '#e0e0e0',
+            bracketUnmatchedColor: '#0066ff', taskbarMinBtnBg: 'rgba(0,0,0,0.05)', taskbarMinBtnHoverBg: 'rgba(0,0,0,0.1)',
+            aiBubbleUser: 'rgba(0,120,212,0.1)', aiBubbleAI: 'rgba(0,120,212,0.05)'
+        }
+    };
+
+    // 自定义色调生成器：基于用户指定的主色，生成完整主题
+function generateCustomTheme(accentHex) {
+    function hexToRgb(hex) {
+        hex = hex.replace('#', '');
+        if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+        return {
+            r: parseInt(hex.substring(0,2), 16),
+            g: parseInt(hex.substring(2,4), 16),
+            b: parseInt(hex.substring(4,6), 16)
+        };
+    }
+    function adjustBrightness(hex, factor) {
+        const c = hexToRgb(hex);
+        const r = Math.min(255, Math.max(0, Math.round(c.r * factor)));
+        const g = Math.min(255, Math.max(0, Math.round(c.g * factor)));
+        const b = Math.min(255, Math.max(0, Math.round(c.b * factor)));
+        return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+    }
+    function toRgba(hex, alpha) {
+        const c = hexToRgb(hex);
+        return 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + alpha + ')';
+    }
+    const dark = adjustBrightness(accentHex, 0.55);
+    const darker = adjustBrightness(accentHex, 0.35);
+    const veryDark = adjustBrightness(accentHex, 0.15);
+    const light = adjustBrightness(accentHex, 1.3);
+    return {
+        label: '🎨 自定义 ' + accentHex,
+        sidebarBg: toRgba(darker, 0.45),
+        taskbarBg: toRgba(veryDark, 0.85),
+        winBg: veryDark,
+        winHeader: darker,
+        winBorder: dark,
+        winBorderBottom: adjustBrightness(accentHex, 0.4),
+        statusBarBg: accentHex,
+        accentColor: accentHex,
+        accentHover: dark,
+        entryBtnBg: accentHex,
+        entryBtnHover: dark,
+        sidebarToggleBg: toRgba(darker, 0.9),
+        sidebarToggleHoverBg: toRgba(dark, 0.9),
+        textPrimary: light,
+        textSecondary: adjustBrightness(accentHex, 1.6),
+        terminalBg: adjustBrightness(accentHex, 0.08),
+        codeGutterBorder: darker,
+        codeGutterColor: adjustBrightness(accentHex, 1.1),
+        codeGutterBg: veryDark,
+        terminalGreen: light,
+        stdinBg: adjustBrightness(accentHex, 0.1),
+        stdinBorder: darker,
+        stdinTitleBg: darker,
+        stdinColor: light,
+        inputBg: darker,
+        inputBorder: dark,
+        settingsBodyBg: veryDark,
+        vsTabBg: darker,
+        vsTabBorder: adjustBrightness(accentHex, 0.25),
+        bracketUnmatchedColor: '#ff3333',
+        taskbarMinBtnBg: 'rgba(255,255,255,0.08)',
+        taskbarMinBtnHoverBg: 'rgba(255,255,255,0.15)',
+        aiBubbleUser: toRgba(accentHex, 0.15),
+        aiBubbleAI: toRgba(accentHex, 0.08)
+    };
+}
+
+function getTheme() {
+    if (OS_DATA.settings.theme === 'custom' && OS_DATA.settings.customAccentColor) {
+        return generateCustomTheme(OS_DATA.settings.customAccentColor);
+    }
+    return THEMES[OS_DATA.settings.theme] || THEMES['default'];
+}
+
+    // --- 2. Shadow DOM ---
+    const host = document.createElement('div');
+    host.id = 'os-shadow-host';
+    host.style.cssText = 'position: fixed !important; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2147483647 !important; pointer-events: none;';
+    document.documentElement.appendChild(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+
+    const style = document.createElement('style');
+    style.innerHTML = `
+        #os-entry-btn { position: fixed !important; bottom: 65px !important; right: 20px !important; background: var(--accent-color) !important; color: white !important; padding: 12px 24px !important; border-radius: 4px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important; cursor: pointer !important; font-family: system-ui, sans-serif !important; font-weight: 500 !important; pointer-events: auto !important; display: block; user-select: none; border: 1px solid rgba(255,255,255,0.2) !important; }
+        #os-entry-btn:hover { background: var(--accent-hover) !important; }
+        #os-desktop { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; pointer-events: none !important; font-family: 'Segoe UI', system-ui, sans-serif !important; display: none; box-sizing: border-box; }
+        #os-wallpaper-blur { position: absolute; top:0; left:0; width:100%; height:100%; backdrop-filter: blur(${OS_DATA.settings.blur}px); background: rgba(0, 0, 0, ${OS_DATA.settings.brightness / 100}); z-index: -1; pointer-events: none !important; }
+        #os-sidebar, #os-taskbar, .os-window { pointer-events: auto !important; }
+        #os-sidebar { position: absolute; top: 0; left: 0; width: 240px; height: calc(100vh - 45px); background: var(--sidebar-bg); backdrop-filter: blur(25px); border-right: 1px solid rgba(255,255,255,0.1); color: white; display: flex; flex-direction: column; box-shadow: 5px 0 25px rgba(0,0,0,0.3); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 100; }
+        #sidebar-toggle { position: absolute; right: -24px; top: 50%; transform: translateY(-50%); width: 24px; height: 50px; background: var(--sidebar-toggle-bg); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 0 6px 6px 0; border: 1px solid rgba(255,255,255,0.2); border-left: none; font-size: 12px; z-index: 101; transition: background 0.2s; }
+        #sidebar-toggle:hover { background: var(--sidebar-toggle-hover-bg); }
+        .sidebar-top-bar { display: flex; padding: 8px; gap: 4px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .sidebar-create-btn { flex: 1; padding: 6px 4px; font-size: 11px; color: #fff; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); border-radius: 3px; cursor: pointer; text-align: center; white-space: nowrap; }
+        .sidebar-create-btn:hover { background: rgba(255,255,255,0.2); }
+        .sidebar-folder-view { padding: 12px; flex-grow: 1; overflow-y: auto; }
+        .folder-tree-title { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; user-select:none; }
+        .file-node { padding: 6px 8px 6px 16px; font-size: 13px; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: space-between; border-radius: 4px; }
+        .file-node:hover { background: rgba(255,255,255,0.15); }
+        .file-info-part { display: flex; align-items: center; gap: 8px; pointer-events: none; }
+        .file-raw-delete-btn { color: #ff5f56; font-weight: bold; font-size: 16px; padding: 0 6px; cursor: pointer; opacity: 0; transition: opacity 0.1s, transform 0.1s; }
+        .file-node:hover .file-raw-delete-btn { opacity: 1; }
+        .file-raw-delete-btn:hover { transform: scale(1.3); color: #ff3b30; }
+        .file-rename-btn { color: #57a6ff; font-size: 14px; padding: 0 4px; cursor: pointer; opacity: 0; transition: opacity 0.1s, transform 0.1s; }
+        .file-node:hover .file-rename-btn { opacity: 1; }
+        .file-rename-btn:hover { transform: scale(1.3); color: #79b8ff; }
+        #os-taskbar { position: absolute; bottom: 0; left: 0; width: 100vw; height: 45px; background: var(--taskbar-bg); backdrop-filter: blur(20px); display: flex; align-items: center; justify-content: space-between; padding: 0 15px; box-sizing: border-box; border-top: 1px solid rgba(255,255,255,0.1); color: white; user-select: none; z-index: 102; }
+        .taskbar-left { display: flex; align-items: center; gap: 10px; height: 100%; }
+        .taskbar-search-box { background: rgba(255,255,255,0.85); border: none; border-radius: 4px; padding: 6px 12px; width: 180px; font-size: 12px; color: #333; outline: none; transition: width 0.2s; }
+        .taskbar-search-box:focus { width: 250px; background: #fff; }
+        .taskbar-icon-btn { font-size: 18px; cursor: pointer; padding: 6px 10px; border-radius: 4px; display: flex; align-items: center; }
+        .taskbar-icon-btn:hover { background: rgba(255,255,255,0.1); }
+        #os-exit-btn { background: rgba(220, 53, 69, 0.8); color: white; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; }
+        #os-exit-btn:hover { background: #dc3545; }
+        #os-clock { font-size: 12px; color: #ccc; text-align: right; line-height:1.2; }
+        .taskbar-minimized-item { background: var(--taskbar-min-btn-bg); color: white; padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background 0.15s; }
+        .taskbar-minimized-item:hover { background: var(--taskbar-min-btn-hover-bg); }
+        .os-window { position: absolute; top: 100px; left: 300px; width: 780px; height: 580px; background: var(--win-bg); border: 1px solid var(--win-border); border-radius: 6px; display: flex; flex-direction: column; box-shadow: 0 15px 40px rgba(0,0,0,0.6); overflow: hidden; min-width: 450px; min-height: 300px; transition: none; }
+        .os-window.maximized { top: 0 !important; left: 0 !important; width: 100vw !important; height: calc(100vh - 45px) !important; border-radius: 0 !important; border: none !important; }
+        .os-window.minimized { display: none !important; }
+        .os-window-header { background: var(--win-header); padding: 0 0 0 12px; display: flex; justify-content: space-between; align-items: center; cursor: move; user-select: none; color: var(--text-primary); font-size: 13px; border-bottom: 1px solid var(--win-border-bottom); height: 32px; }
+        .window-controls-group { display: flex; align-items: center; height: 100%; }
+        .win-ctrl-btn { width: 36px; height: 32px; color: #aaa; font-size: 14px; font-family: 'Segoe UI', sans-serif; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.1s; }
+        .win-ctrl-btn:hover { background: rgba(255,255,255,0.1); }
+        .win-ctrl-btn.win-btn-close:hover { background: #e81123 !important; color: #fff !important; }
+        .win-btn-save { color: #57a6ff; font-size: 12px; cursor: pointer; user-select: none; font-weight: bold; padding: 0 8px; }
+        .win-btn-save:hover { color: #79b8ff; }
+        .os-window-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+        .os-window-resize-handle { position: absolute; bottom: 0; right: 0; width: 14px; height: 14px; cursor: se-resize; z-index: 99999; background: transparent; }
+        .code-editor-container { display: flex; flex-grow: 1; background: var(--win-bg); overflow: hidden; position: relative; flex-direction: column; }
+        .vscode-tabs-bar { height: 30px; background: var(--vs-tab-bg); display: flex; align-items: center; justify-content: space-between; padding-right: 12px; border-bottom: 1px solid var(--vs-tab-border); user-select: none; }
+        .vscode-tab-item { background: var(--win-bg); color: #fff; height: 100%; display: flex; align-items: center; padding: 0 16px; font-size: 12px; border-right: 1px solid var(--vs-tab-border); gap: 6px; font-family: monospace; }
+        .vscode-run-btn { color: #4ec9b0; cursor: pointer; font-size: 14px; padding: 4px 12px; border-radius: 4px; display: flex; align-items: center; font-weight: bold; background: rgba(78,201,176,0.1); }
+        .vscode-run-btn:hover { background: rgba(78,201,176,0.25); color: #4cee9f; }
+        .code-editor-main-split { display: flex; flex-grow: 1; overflow: hidden; position: relative; height: 55%; }
+        .code-gutter { width: 48px; background: var(--code-gutter-bg); border-right: 1px solid var(--code-gutter-border); color: var(--code-gutter-color); text-align: right; padding: 12px 10px 12px 0; font-family: 'Consolas', monospace; font-size: 14px; line-height: 1.5; user-select: none; overflow: hidden; box-sizing: border-box; }
+        .code-gutter div { height: 21px; }
+        .code-textarea-wrap { flex-grow: 1; position: relative; height: 100%; background: var(--win-bg); }
+        .os-textarea { width: 100%; height: 100%; background: transparent; color: #d4d4d4; font-family: 'Consolas', monospace; font-size: 14px; padding: 12px; border: none; resize: none; outline: none; box-sizing: border-box; line-height: 1.5; overflow-y: auto; white-space: pre; caret-color: #aeafad; }
+        .bracket-highlight-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; z-index: 1; font-family: 'Consolas', monospace; font-size: 14px; padding: 12px; line-height: 1.5; white-space: pre; color: transparent; box-sizing: border-box; }
+        .bracket-highlight-layer .unmatched { color: var(--bracket-unmatched-color); font-weight: bold; }
+        .vscode-terminal-panel { height: 40%; background: var(--terminal-bg); border-top: 1px solid var(--code-gutter-border); display: flex; flex-direction: column; color: #cccccc; font-family: 'Consolas', monospace; }
+        .terminal-header { height: 26px; background: var(--win-bg); display: flex; justify-content: space-between; align-items: center; padding: 0 12px; font-size: 11px; color: var(--text-secondary); border-bottom: 1px solid var(--vs-tab-border); user-select: none; }
+        .terminal-header span.active { color: #fff; border-bottom: 2px solid var(--accent-color); font-weight: bold; padding: 4px 0; }
+        .terminal-main-layout { display: flex; flex-grow: 1; overflow: hidden; }
+        .terminal-body { flex: 7; padding: 10px 12px; overflow-y: auto; font-size: 13px; line-height: 1.4; color: var(--terminal-green); white-space: pre-wrap; background: var(--terminal-bg); }
+        .terminal-stdin-area { flex: 3; background: var(--stdin-bg); border-left: 1px solid var(--stdin-border); display: flex; flex-direction: column; }
+        .stdin-title { font-size: 11px; color: #da70d6; padding: 4px 8px; background: var(--stdin-title-bg); user-select: none; font-weight: bold; }
+        .os-stdin-input { flex-grow: 1; background: transparent; color: var(--stdin-color); font-family: 'Consolas', monospace; font-size: 13px; padding: 8px; border: none; resize: none; outline: none; line-height: 1.4; }
+        .vscode-status-bar { height: 22px; background: var(--status-bar-bg); color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 12px; user-select: none; }
+        .word-container { display: flex; flex-direction: column; height: 100%; background: #f3f2f1; color: #333; }
+        .word-ribbon { background: #2b579a; color: white; padding: 0 12px; font-size: 12px; display: flex; gap: 18px; align-items: center; height: 28px; user-select: none; }
+        .word-page-viewport { flex-grow: 1; overflow-y: auto; padding: 25px; display: flex; justify-content: center; }
+        .word-page { background: white; width: 100%; max-width: 650px; min-height: 500px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); padding: 45px; box-sizing: border-box; outline: none; font-family: system-ui; font-size: 15px; line-height: 1.6; }
+        .excel-container { display: flex; flex-direction: column; height: 100%; background: #fff; color: #333; font-size: 12px; }
+        .excel-ribbon { background: #107c41; color: white; padding: 4px 12px; font-size: 12px; display: flex; gap: 15px; align-items: center; height: 26px; user-select: none; }
+        .excel-formula-bar { background: #f3f2f1; border-bottom: 1px solid #d2d0ce; padding: 4px 12px; display: flex; align-items: center; gap: 8px; box-sizing: border-box; }
+        .excel-formula-input { flex-grow: 1; border: 1px solid #d2d0ce; padding: 2px 6px; background: white; outline: none; font-family: monospace; }
+        .excel-grid-viewport { flex-grow: 1; overflow: auto; background: #f3f2f1; }
+        .excel-table { border-collapse: collapse; background: white; table-layout: fixed; width: max-content; }
+        .excel-table th { background: #f3f2f1; border: 1px solid #d2d0ce; font-weight: normal; color: #605e5c; text-align: center; height: 22px; user-select: none; }
+        .excel-table td { border: 1px solid #d2d0ce; padding: 0 6px; height: 22px; outline: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; box-sizing: border-box; }
+        .excel-table td.selected-cell { border: 2px solid #107c41 !important; background: #e1f2e9; }
+        .md-preview-container { display: flex; flex-direction: column; height: 100%; background: var(--win-bg); }
+        .md-toolbar { height: 30px; background: var(--vs-tab-bg); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--vs-tab-border); user-select: none; font-size: 12px; color: var(--text-secondary); }
+        .md-toolbar-btn { cursor: pointer; padding: 4px 10px; border-radius: 3px; color: var(--text-primary); font-size: 12px; background: rgba(255,255,255,0.05); }
+        .md-toolbar-btn:hover { background: rgba(255,255,255,0.15); }
+        .md-toolbar-btn.active { background: var(--accent-color); color: #fff; }
+        .md-split-view { display: flex; flex-grow: 1; overflow: hidden; }
+        .md-editor-pane { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--vs-tab-border); }
+        .md-preview-pane { flex: 1; overflow-y: auto; padding: 20px; color: var(--text-primary); font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.7; }
+        .md-preview-pane h1 { font-size: 1.6em; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; }
+        .md-preview-pane h2 { font-size: 1.3em; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px; }
+        .md-preview-pane h3 { font-size: 1.1em; }
+        .md-preview-pane pre { background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+        .md-preview-pane code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 3px; font-family: Consolas, monospace; font-size: 0.9em; }
+        .md-preview-pane a { color: #58a6ff; }
+        .md-preview-pane blockquote { border-left: 3px solid var(--accent-color); margin: 8px 0; padding: 4px 12px; color: var(--text-secondary); }
+        .settings-body { padding: 20px; font-size: 13px; display: flex; flex-direction: column; gap: 15px; background: var(--settings-body-bg); height:100%; box-sizing: border-box; color: #ddd; overflow-y: auto; }
+        .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .settings-slider { flex-grow: 1; cursor: pointer; accent-color: var(--accent-color); }
+        .settings-input { flex-grow: 1; background: var(--input-bg); border: 1px solid var(--input-border); color: white; padding: 4px 8px; outline: none; font-family: monospace; }
+        .model-btn { cursor: pointer; border: none; padding: 4px 8px; font-weight: bold; border-radius: 3px; font-size: 14px; line-height: 1; }
+        .model-btn-add { background: var(--accent-color); color: white; }
+        .model-btn-add:hover { background: var(--accent-hover); }
+        .model-btn-del { background: #d83b01; color: white; }
+        .model-btn-del:hover { background: #ea4a1f; }
+        .theme-selector { display: flex; gap: 8px; flex-wrap: wrap; }
+        .theme-swatch { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: border-color 0.2s, transform 0.15s; }
+        .theme-swatch:hover { transform: scale(1.15); }
+        .theme-swatch.active { border-color: #fff; transform: scale(1.15); }
+        .toggle-switch { position: relative; width: 44px; height: 24px; background: #555; border-radius: 12px; cursor: pointer; transition: background 0.3s; flex-shrink: 0; }
+        .toggle-switch.active { background: var(--accent-color); }
+        .toggle-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; background: white; border-radius: 50%; transition: transform 0.3s; }
+        .toggle-switch.active::after { transform: translateX(20px); }
+        .snippet-dropdown { position: absolute; top: 30px; right: 0; width: 280px; max-height: 320px; background: #252526; border: 1px solid #444; border-radius: 6px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.5); z-index: 9999; display: none; }
+        .snippet-dropdown.show { display: block; }
+        .snippet-item { padding: 8px 12px; cursor: pointer; color: #ccc; font-size: 12px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        .snippet-item:last-child { border-bottom: none; }
+        .snippet-item:hover { background: #094771; color: #fff; }
+        .snippet-item .snippet-name { font-weight: bold; color: #4ec9b0; }
+        .snippet-item .snippet-prefix { color: #888; font-family: monospace; }
+        .ai-chat-msg { margin-bottom: 12px; position: relative; }
+        .ai-chat-msg.user-msg { background: var(--ai-bubble-user); border-radius: 8px; padding: 10px 14px; }
+        .ai-chat-msg.ai-msg { background: var(--ai-bubble-ai); border-radius: 8px; padding: 10px 14px; }
+        .ai-msg-label { font-size: 11px; font-weight: bold; margin-bottom: 4px; }
+        .ai-msg-del { position: absolute; top: 4px; right: 8px; cursor: pointer; opacity: 0; font-size: 16px; color: #888; transition: opacity 0.15s, color 0.15s; }
+        .ai-chat-msg:hover .ai-msg-del { opacity: 1; }
+        .ai-msg-del:hover { color: #ff5f56; }
+        .ai-conv-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer; font-size: 12px; transition: background 0.15s; }
+        .ai-conv-item:hover { background: rgba(255,255,255,0.1); }
+        .ai-conv-item.active { background: var(--accent-color); color: #fff; }
+        .ai-conv-del { cursor: pointer; font-size: 14px; color: #888; padding: 0 4px; }
+        .ai-conv-del:hover { color: #ff5f56; }
+        [data-theme-active="light"] .os-textarea { color: #1e1e1e !important; caret-color: #000 !important; }
+        [data-theme-active="light"] .vscode-tab-item { color: #333 !important; }
+        [data-theme-active="light"] .terminal-header { color: #555 !important; }
+        [data-theme-active="light"] .terminal-header span.active { color: #000 !important; border-bottom-color: #0078d4 !important; }
+        [data-theme-active="light"] .terminal-body { color: #006600 !important; }
+        [data-theme-active="light"] .os-stdin-input { color: #8b008b !important; }
+        [data-theme-active="light"] .stdin-title { color: #8b008b !important; }
+        [data-theme-active="light"] .vscode-run-btn { color: #007a6a !important; background: rgba(0,122,106,0.1) !important; }
+        [data-theme-active="light"] .vscode-run-btn:hover { color: #009980 !important; background: rgba(0,122,106,0.2) !important; }
+        [data-theme-active="light"] .vscode-snippet-btn { color: #7a6a00 !important; background: rgba(122,106,0,0.1) !important; }
+        [data-theme-active="light"] .win-btn-save { color: #0066cc !important; }
+        [data-theme-active="light"] .win-btn-save:hover { color: #004499 !important; }
+        [data-theme-active="light"] .snippet-dropdown { background: #fff !important; border-color: #ccc !important; box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important; }
+        [data-theme-active="light"] .snippet-item { color: #333 !important; border-bottom-color: #e0e0e0 !important; }
+        [data-theme-active="light"] .snippet-item:hover { background: #e8f0fe !important; color: #000 !important; }
+        [data-theme-active="light"] .snippet-item .snippet-name { color: #007a6a !important; }
+        [data-theme-active="light"] .snippet-item .snippet-prefix { color: #888 !important; }
+        [data-theme-active="light"] .win-ctrl-btn { color: #666 !important; }
+        [data-theme-active="light"] .win-ctrl-btn:hover { background: rgba(0,0,0,0.06) !important; }
+        [data-theme-active="light"] .win-ctrl-btn.win-btn-close:hover { background: #e81123 !important; color: #fff !important; }
+        [data-theme-active="light"] .file-node { color: #333 !important; }
+        [data-theme-active="light"] .file-node:hover { background: rgba(0,0,0,0.06) !important; }
+        [data-theme-active="light"] .file-raw-delete-btn { color: #d32f2f !important; }
+        [data-theme-active="light"] .file-raw-delete-btn:hover { color: #b71c1c !important; }
+        [data-theme-active="light"] .file-rename-btn { color: #0066cc !important; }
+        [data-theme-active="light"] .file-rename-btn:hover { color: #004499 !important; }
+        [data-theme-active="light"] .folder-tree-title { color: rgba(0,0,0,0.4) !important; }
+        [data-theme-active="light"] .sidebar-top-bar { background: rgba(0,0,0,0.05) !important; border-bottom-color: rgba(0,0,0,0.08) !important; }
+        [data-theme-active="light"] .sidebar-create-btn { color: #333 !important; background: rgba(0,0,0,0.06) !important; border-color: rgba(0,0,0,0.1) !important; }
+        [data-theme-active="light"] .sidebar-create-btn:hover { background: rgba(0,0,0,0.1) !important; }
+        [data-theme-active="light"] #os-sidebar { border-right-color: rgba(0,0,0,0.1) !important; box-shadow: 5px 0 15px rgba(0,0,0,0.08) !important; }
+        [data-theme-active="light"] #os-taskbar { border-top-color: rgba(0,0,0,0.1) !important; color: #333 !important; }
+        [data-theme-active="light"] #os-clock { color: #555 !important; }
+        [data-theme-active="light"] .taskbar-icon-btn:hover { background: rgba(0,0,0,0.06) !important; }
+        [data-theme-active="light"] #os-exit-btn { background: rgba(220, 53, 69, 0.9) !important; color: white !important; }
+        [data-theme-active="light"] .os-window-header { border-bottom-color: #e0e0e0 !important; }
+        [data-theme-active="light"] .os-window { box-shadow: 0 15px 40px rgba(0,0,0,0.15) !important; }
+        [data-theme-active="light"] .toggle-switch { background: #bbb !important; }
+        [data-theme-active="light"] .toggle-switch.active { background: #0078d4 !important; }
+        [data-theme-active="light"] .settings-body { color: #333 !important; }
+        .explorer-item:hover { background: rgba(255,255,255,0.1); }
+        [data-theme-active="light"] .settings-input { color: #333 !important; }
+        [data-theme-active="light"] .vscode-status-bar { color: #fff !important; }
+        [data-theme-active="light"] .taskbar-minimized-item { color: #333 !important; }
+        [data-theme-active="light"] .md-preview-pane { color: #333 !important; }
+        [data-theme-active="light"] .md-preview-pane pre { background: rgba(0,0,0,0.05) !important; }
+        [data-theme-active="light"] .md-preview-pane code { background: rgba(0,0,0,0.05) !important; }
+        [data-theme-active="light"] .md-preview-pane a { color: #0078d4 !important; }
+        [data-theme-active="light"] .md-preview-pane blockquote { border-left-color: #0078d4 !important; color: #666 !important; }
+        [data-theme-active="light"] .md-toolbar-btn { color: #333 !important; }
+        [data-theme-active="light"] .ai-chat-msg.user-msg { background: rgba(0,120,212,0.08) !important; }
+        [data-theme-active="light"] .ai-chat-msg.ai-msg { background: rgba(0,120,212,0.04) !important; }
+        [data-theme-active="light"] .ai-conv-item { background: rgba(0,0,0,0.04) !important; }
+        [data-theme-active="light"] .ai-conv-item:hover { background: rgba(0,0,0,0.08) !important; }
+        .folder-drop-target {
+            background: rgba(0,120,215,0.15) !important;
+            outline: 2px dashed var(--accent-color);
+            outline-offset: -2px;
+            border-radius: 6px;
+        }
+        .os-shortcut-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--win-bg);
+            border: 1px solid var(--win-border);
+            border-radius: 12px;
+            padding: 20px 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            z-index: 9999999;
+            pointer-events: none;
+            min-width: 420px;
+            max-height: 90vh;
+            overflow-y: auto;
+            opacity: 0;
+            transition: opacity 0.15s;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        .os-shortcut-panel.visible { opacity: 1; }
+        .os-shortcut-panel h3 {
+            margin: 0 0 12px;
+            font-size: 16px;
+            color: var(--accent-color);
+            border-bottom: 1px solid var(--win-border);
+            padding-bottom: 8px;
+        }
+        .os-shortcut-group { margin-bottom: 14px; }
+        .os-shortcut-group-title {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+        .os-shortcut-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+        .os-shortcut-row kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            color: var(--accent-color);
+            min-width: 28px;
+            text-align: center;
+        }
+    `;
+    shadow.appendChild(style);
+
+    function applyTheme() {
+        const t = getTheme();
+        const desktop = shadow.getElementById('os-desktop');
+        if (!desktop) return;
+        const vars = [
+            ['--sidebar-bg', t.sidebarBg], ['--taskbar-bg', t.taskbarBg],
+            ['--win-bg', t.winBg], ['--win-header', t.winHeader],
+            ['--win-border', t.winBorder], ['--win-border-bottom', t.winBorderBottom],
+            ['--status-bar-bg', t.statusBarBg], ['--accent-color', t.accentColor],
+            ['--accent-hover', t.accentHover], ['--entry-btn-bg', t.entryBtnBg],
+            ['--entry-btn-hover', t.entryBtnHover], ['--sidebar-toggle-bg', t.sidebarToggleBg],
+            ['--sidebar-toggle-hover-bg', t.sidebarToggleHoverBg],
+            ['--text-primary', t.textPrimary], ['--text-secondary', t.textSecondary],
+            ['--terminal-bg', t.terminalBg], ['--code-gutter-border', t.codeGutterBorder],
+            ['--code-gutter-color', t.codeGutterColor], ['--code-gutter-bg', t.codeGutterBg],
+            ['--terminal-green', t.terminalGreen], ['--stdin-bg', t.stdinBg],
+            ['--stdin-border', t.stdinBorder], ['--stdin-title-bg', t.stdinTitleBg],
+            ['--stdin-color', t.stdinColor], ['--input-bg', t.inputBg],
+            ['--input-border', t.inputBorder], ['--settings-body-bg', t.settingsBodyBg],
+            ['--vs-tab-bg', t.vsTabBg], ['--vs-tab-border', t.vsTabBorder],
+            ['--bracket-unmatched-color', t.bracketUnmatchedColor],
+            ['--taskbar-min-btn-bg', t.taskbarMinBtnBg],
+            ['--taskbar-min-btn-hover-bg', t.taskbarMinBtnHoverBg],
+            ['--ai-bubble-user', t.aiBubbleUser], ['--ai-bubble-ai', t.aiBubbleAI]
+        ];
+        vars.forEach(([k, v]) => desktop.style.setProperty(k, v));
+        const entryBtn = shadow.getElementById('os-entry-btn');
+        if (entryBtn) { entryBtn.style.setProperty('--accent-color', t.accentColor); entryBtn.style.setProperty('--accent-hover', t.accentHover); }
+        desktop.setAttribute('data-theme-active', OS_DATA.settings.theme);
+    }
+
+    // --- 3. 基础桌面设施 ---
+    const entryBtn = document.createElement('div');
+    entryBtn.id = 'os-entry-btn';
+    entryBtn.innerHTML = '💻 进入桌面模式';
+    shadow.appendChild(entryBtn);
+
+    const desktop = document.createElement('div');
+    desktop.id = 'os-desktop';
+    // ============================================================
+    // 【修复】3+2 布局
+    // 第一行：+ .txt  |  + .cpp  |  M .md
+    // 第二行：X Excel |  W Word
+    // ============================================================
+    desktop.innerHTML = `
+        <div id="os-wallpaper-blur"></div>
+        <div id="os-sidebar">
+            <div id="sidebar-toggle">◀</div>
+            <div class="sidebar-top-bar">
+                <div class="sidebar-create-btn" id="sbar-new-txt">+ 新建.txt</div>
+                <div class="sidebar-create-btn" id="sbar-new-cpp">+ 新建.cpp</div>
+                <div class="sidebar-create-btn" id="sbar-new-md" style="color:#dcdcaa;font-weight:bold;">M 新建.md</div>
+            </div>
+            <div class="sidebar-top-bar">
+            <div class="sidebar-create-btn" id="sbar-new-xlsx" style="color:#107c41;font-weight:bold;">X 新建Excel</div>
+            <div class="sidebar-create-btn" id="sbar-new-docx" style="color:#2b579a;font-weight:bold;">W 新建Word</div>
+            <div class="sidebar-create-btn" id="sbar-new-folder" style="color:#f0c040;font-weight:bold;">新建文件夹</div>
+            </div>
+            <div class="sidebar-folder-view">
+                <div class="folder-tree-title">WORKSPACE EXPLORER <span>∨</span></div>
+                <div id="os-sidebar-file-list" style="margin-top: 8px;"></div>
+            </div>
+        </div>
+        <div id="os-taskbar">
+            <div class="taskbar-left">
+                <div class="taskbar-icon-btn" id="taskbar-settings-btn" title="系统设置">⚙️</div>
+                <input type="text" class="taskbar-search-box" id="global-search" placeholder="在这里输入你想搜索的内容">
+                <div id="os-exit-btn">⏻ 退出桌面</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <div id="taskbar-minimized-list" style="display:flex;gap:4px;align-items:center;"></div>
+                <div id="os-clock">00:00:00</div>
+            </div>
+        </div>
+    `;
+    shadow.appendChild(desktop);
+    applyTheme();
+
+    const wallpaperBlur = shadow.getElementById('os-wallpaper-blur');
+    const sidebar = shadow.getElementById('os-sidebar');
+    const sidebarToggle = shadow.getElementById('sidebar-toggle');
+    const taskbarMinList = shadow.getElementById('taskbar-minimized-list');
+    let isSidebarOpen = true;
+
+    sidebarToggle.addEventListener('click', (e) => { e.stopPropagation(); isSidebarOpen = !isSidebarOpen; sidebar.style.transform = isSidebarOpen ? 'translateX(0)' : 'translateX(-100%)'; sidebarToggle.innerText = isSidebarOpen ? '◀' : '▶'; });
+    function enterDesktopMode() {
+        desktop.style.display = 'block';
+        entryBtn.style.display = 'none';
+        OS_DATA.desktopActive = true;
+        saveSystemDataNow();
+        if (OS_DATA.settings.rememberWindows && OS_DATA.openWindows && OS_DATA.openWindows.length > 0) restoreWindows();
+        if (OS_DATA.settingsOpen) openSettingsPanel();
+    }
+    function exitDesktopMode() {
+        desktop.style.display = 'none';
+        entryBtn.style.display = 'block';
+        OS_DATA.desktopActive = false;
+        OS_DATA.settingsOpen = false;
+        saveSystemDataNow();
+        const settingsWin = shadow.getElementById('win-runtime-sys-settings');
+        if (settingsWin) settingsWin.remove();
+    }
+    entryBtn.addEventListener('click', (e) => { e.stopPropagation(); requestDesktop(() => enterDesktopMode()); }, true);
+    shadow.getElementById('os-exit-btn').addEventListener('click', (e) => { e.stopPropagation(); if (confirm('确定要退出桌面模式吗？')) exitDesktopMode(); }, true);
+    if (!localStorage.getItem('MOCK_OS_WELCOMED')) {
+    const welcomeOverlay = document.createElement('div');
+    welcomeOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999999;display:flex;align-items:center;justify-content:center;pointer-events:auto;';
+    welcomeOverlay.innerHTML = `
+        <div style="background:var(--win-bg);border-radius:16px;padding:32px 40px;max-width:420px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.5);border:1px solid var(--win-border);">
+            <div style="font-size:48px;margin-bottom:12px;">👋</div>
+            <h2 style="margin:0 0 8px;color:var(--text-primary);font-size:20px;">欢迎使用 Apilio OS 4.0</h2>
+            <p style="color:var(--text-secondary);font-size:13px;line-height:1.6;margin:0 0 20px;">
+                📁 左侧管理文件，双击打开编辑<br>
+                🤖 搜索框输入「对话」打开AI助手<br>
+                🖱️ 右键可新建文件/文件夹<br>
+                ⚙️ 右下角可切换主题和壁纸
+            </p>
+            <button id="os-welcome-ok" style="padding:10px 32px;border-radius:8px;border:none;background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;font-size:14px;cursor:pointer;font-weight:600;">开始使用</button>
+        </div>`;
+    shadow.appendChild(welcomeOverlay);
+    welcomeOverlay.querySelector('#os-welcome-ok').addEventListener('click', function() {
+        welcomeOverlay.remove();
+        localStorage.setItem('MOCK_OS_WELCOMED', '1');
+    });
+}
+    if (OS_DATA.desktopActive && OS_DATA.settings.autoRestoreDesktop) { requestAnimationFrame(() => { requestDesktop(() => enterDesktopMode()); }); }
+
+    setInterval(() => { const d = new Date(); shadow.getElementById('os-clock').innerHTML = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}<br><span style="font-size:10px;color:#aaa;">${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')}</span>`; }, 1000);
+    const clockEl = shadow.getElementById('os-clock');
+    clockEl.style.cursor = 'pointer';
+    clockEl.addEventListener('click', function() {
+        const existing = shadow.querySelector('.os-calendar-popup');
+        if (existing) { existing.remove(); return; }
+        const now = new Date();
+        const year = now.getFullYear(); const month = now.getMonth();
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const today = now.getDate();
+        const monthNames = ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
+        let calHTML = '<div style="text-align:center;font-weight:600;margin-bottom:8px;color:var(--text-primary);">' + year + '年 ' + monthNames[month] + '</div>';
+        calHTML += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:11px;">';
+        ['日','一','二','三','四','五','六'].forEach(function(d) { calHTML += '<div style="color:var(--text-secondary);padding:4px 0;">' + d + '</div>'; });
+        for (let i = 0; i < firstDay; i++) calHTML += '<div></div>';
+        for (let d = 1; d <= daysInMonth; d++) {
+            const isToday = d === today ? 'background:var(--accent-color);border-radius:50%;color:#fff;font-weight:700;' : 'color:var(--text-primary);';
+            calHTML += '<div style="padding:4px 0;' + isToday + '">' + d + '</div>';
+        }
+        calHTML += '</div>';
+        const popup = document.createElement('div');
+        popup.className = 'os-calendar-popup';
+        popup.style.cssText = 'position:fixed;bottom:56px;right:12px;background:var(--win-bg);border:1px solid var(--win-border);border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.4);z-index:999999;width:260px;pointer-events:auto;';
+        popup.innerHTML = calHTML;
+        shadow.appendChild(popup);
+        setTimeout(function() {
+            var cl = function(ev) { if (!popup.contains(ev.target) && ev.target !== clockEl) { popup.remove(); shadow.removeEventListener('click', cl, true); } };
+            shadow.addEventListener('click', cl, true);
+        }, 10);
+    });
+    (function() {
+    const searchBox = shadow.getElementById('global-search');
+    let searchResults = [];
+    let searchResultIdx = -1;
+    function performSearch(keyword) {
+        searchResults = [];
+        searchResultIdx = -1;
+        if (!keyword) { shadow.querySelectorAll('.file-node').forEach(n => n.style.display = 'flex'); shadow.querySelectorAll('.folder-children').forEach(n => n.style.display = 'none'); return; }
+        if (keyword === '对话' || keyword === 'ai') { openAIChatWindow(); searchBox.value = ''; shadow.querySelectorAll('.file-node').forEach(n => n.style.display = 'flex'); return; }
+        shadow.querySelectorAll('.file-node').forEach(node => {
+            const fileName = node.querySelector('.file-info-part span:last-child').innerText.toLowerCase();
+            const fileId = node.getAttribute('data-file-id');
+            if (fileName.includes(keyword)) {
+                node.style.display = 'flex';
+                if (fileId) searchResults.push(fileId);
+            } else {
+                node.style.display = 'none';
+            }
+        });
+        shadow.querySelectorAll('.folder-children').forEach(n => n.style.display = 'block');
+    }
+    searchBox.addEventListener('input', function(e) { performSearch(e.target.value.toLowerCase().trim()); });
+    searchBox.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && searchResults.length > 0) {
+            searchResultIdx = (searchResultIdx + 1) % searchResults.length;
+            openAppWindow(searchResults[searchResultIdx]);
+        }
+    });
+})();
+    shadow.getElementById('taskbar-settings-btn').addEventListener('click', () => {
+        openSettingsPanel();
+    });
+    shadow.addEventListener('keydown', function(e) {
+        const activeTag = shadow.activeElement ? shadow.activeElement.tagName : '';
+        const isInput = (activeTag === 'INPUT' || activeTag === 'TEXTAREA' ||
+                        shadow.activeElement.contentEditable === 'true' ||
+                        shadow.activeElement.classList.contains('os-stdin-input'));
+        if (isInput && !e.altKey) return;  // Alt+F4 不受影响
+        if (e.ctrlKey || e.metaKey) clearTimeout(ctrlHoldTimer);
+        if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+            e.preventDefault();
+            createNewFile('txt');
+        }
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'N') {
+            e.preventDefault();
+            createNewFile('folder');
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            e.preventDefault();
+            const searchBox = shadow.getElementById('global-search');
+            if (searchBox) searchBox.focus();
+        }
+        if (e.altKey && e.key === 'F4') {
+            e.preventDefault();
+            if (confirm('确定要退出桌面模式吗？')) exitDesktopMode();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+            e.preventDefault();
+            openSettingsPanel();
+        }
+    });
+    desktop.addEventListener('contextmenu', function(e) {
+    if (e.target !== desktop && !e.target.matches('#os-wallpaper-blur')) return;
+    e.preventDefault();
+    const existing = shadow.querySelector('.desktop-ctx-menu');
+    if (existing) existing.remove();
+    const menu = document.createElement('div');
+    menu.className = 'desktop-ctx-menu explorer-ctx-menu';
+    menu.style.cssText = 'position:fixed;z-index:999999;background:var(--win-bg);border:1px solid var(--win-border);border-radius:8px;padding:4px 0;box-shadow:0 8px 24px rgba(0,0,0,0.3);min-width:180px;pointer-events:auto;';
+    function addRow(label, action) {
+        const row = document.createElement('div');
+        row.textContent = label;
+        row.style.cssText = 'padding:8px 16px;cursor:pointer;font-size:13px;color:var(--text-primary);transition:background 0.1s;';
+        row.addEventListener('mouseenter', function() { row.style.background = 'rgba(255,255,255,0.1)'; });
+        row.addEventListener('mouseleave', function() { row.style.background = 'transparent'; });
+        row.addEventListener('click', function() { menu.remove(); action(); });
+        menu.appendChild(row);
+    }
+    addRow('📄 新建文件', function() { createNewFile('txt'); });
+    addRow('📁 新建文件夹', function() { createNewFile('folder'); });
+    addRow('⚙️ 系统设置', function() { openSettingsPanel(); });
+    addRow('🤖 AI 助手', function() { openAIChatWindow(); });
+    menu.style.left = e.clientX + 'px'; menu.style.top = e.clientY + 'px';
+    shadow.appendChild(menu);
+    if (e.clientX + 200 > window.innerWidth) menu.style.left = (window.innerWidth - 204) + 'px';
+    if (e.clientY + 150 > window.innerHeight) menu.style.top = (window.innerHeight - 154) + 'px';
+    setTimeout(function() {
+        var cl = function(ev) { if (!menu.contains(ev.target)) { menu.remove(); shadow.removeEventListener('click', cl, true); } };
+        shadow.addEventListener('click', cl, true);
+    }, 10);
+});
+    // ===== 长按 Ctrl 显示快捷键面板 =====
+    const shortcutPanel = document.createElement('div');
+    shortcutPanel.className = 'os-shortcut-panel';
+    shortcutPanel.innerHTML = `
+        <h3>⌨️ 快捷键一览</h3>
+        <div class="os-shortcut-group">
+            <div class="os-shortcut-group-title">📁 全局</div>
+            <div class="os-shortcut-row"><span>新建文件</span><kbd>Ctrl</kbd>+<kbd>N</kbd></div>
+            <div class="os-shortcut-row"><span>新建文件夹</span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></div>
+            <div class="os-shortcut-row"><span>搜索</span><kbd>Ctrl</kbd>+<kbd>F</kbd></div>
+            <div class="os-shortcut-row"><span>系统设置</span><kbd>Ctrl</kbd>+<kbd>,</kbd></div>
+            <div class="os-shortcut-row"><span>退出桌面</span><kbd>Alt</kbd>+<kbd>F4</kbd></div>
+            <div class="os-shortcut-row"><span>关闭菜单/弹窗</span><kbd>Esc</kbd></div>
+        </div>
+        <div class="os-shortcut-group">
+            <div class="os-shortcut-group-title">🪟 窗口</div>
+            <div class="os-shortcut-row"><span>保存</span><kbd>Ctrl</kbd>+<kbd>S</kbd></div>
+            <div class="os-shortcut-row"><span>关闭窗口</span><kbd>Ctrl</kbd>+<kbd>W</kbd></div>
+            <div class="os-shortcut-row"><span>最小化</span><kbd>Ctrl</kbd>+<kbd>M</kbd></div>
+        </div>
+        <div class="os-shortcut-group">
+            <div class="os-shortcut-group-title">📝 编辑器</div>
+            <div class="os-shortcut-row"><span>缩进</span><kbd>Tab</kbd></div>
+            <div class="os-shortcut-row"><span>复制行</span><kbd>Ctrl</kbd>+<kbd>D</kbd></div>
+            <div class="os-shortcut-row"><span>运行代码</span><kbd>F5</kbd> / <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd></div>
+            <div class="os-shortcut-row"><span>注释切换</span><kbd>Ctrl</kbd>+<kbd>/</kbd></div>
+        </div>
+        <div style="text-align:center;font-size:11px;color:var(--text-secondary);margin-top:8px;">松开 Ctrl 关闭</div>
+    `;
+    shadow.appendChild(shortcutPanel);
+
+    let ctrlHoldTimer = null;
+    let ctrlPanelShown = false;
+
+    shadow.addEventListener('keydown', function(e) {
+        // Escape 始终生效
+        if (e.key === 'Escape') {
+            shadow.querySelectorAll('.explorer-ctx-menu, .desktop-ctx-menu').forEach(function(m) { m.remove(); });
+            const cal = shadow.querySelector('.os-calendar-popup');
+            if (cal) cal.remove();
+            shadow.querySelectorAll('.snippet-dropdown.show').forEach(function(d) { d.classList.remove('show'); });
+            return;
+        }
+
+        // Ctrl 长按检测
+        if ((e.key === 'Control' || e.key === 'Meta') && !ctrlPanelShown) {
+            ctrlHoldTimer = setTimeout(function() {
+                shortcutPanel.classList.add('visible');
+                ctrlPanelShown = true;
+            }, 500);
+        }
+    });
+
+    shadow.addEventListener('keyup', function(e) {
+        if (e.key === 'Control' || e.key === 'Meta') {
+            clearTimeout(ctrlHoldTimer);
+            if (ctrlPanelShown) {
+                shortcutPanel.classList.remove('visible');
+                ctrlPanelShown = false;
+            }
+        }
+    });
+    // --- 4. 侧边栏文件管理 ---
+    function renderSidebarFiles() {
+    const listContainer = shadow.getElementById('os-sidebar-file-list');
+    listContainer.innerHTML = '';
+
+    // 分离根目录文件和文件夹
+    const rootFiles = OS_DATA.files.filter(f => {
+        // 如果文件是某个文件夹的子项，则不在根目录显示
+        return !OS_DATA.files.some(parent =>
+            parent.type === 'folder' && parent.children && parent.children.includes(f.id)
+        );
+    });
+
+    function createFileNode(file, depth) {
+        const el = document.createElement('div');
+        el.className = 'file-node';
+        el.setAttribute('data-file-id', file.id);
+        el.style.paddingLeft = (16 + depth * 20) + 'px';
+
+        let icon = '📄';
+        if (file.type === 'cpp') icon = '⚙️';
+        if (file.type === 'xlsx') icon = '📊';
+        if (file.type === 'docx') icon = '📘';
+        if (file.type === 'md') icon = '📝';
+        if (file.type === 'folder') icon = '📁';
+
+        el.innerHTML = `
+            <div class="file-info-part">
+                <span>${icon}</span>
+                <span>${file.name}</span>
+            </div>
+            <div style="display:flex;align-items:center;">
+                <div class="file-rename-btn" title="重命名">✏️</div>
+                <div class="file-raw-delete-btn" title="彻底删除">×</div>
+            </div>
+        `;
+        el.draggable = true;
+            el.addEventListener('dragstart', function(e) {
+                e.dataTransfer.setData('text/os-file-id', file.id);
+                e.dataTransfer.effectAllowed = 'move';
+                el.style.opacity = '0.4';
+            });
+            el.addEventListener('dragend', function() {
+                el.style.opacity = '1';
+                shadow.querySelectorAll('.folder-drop-target').forEach(function(item) {
+                    item.classList.remove('folder-drop-target');
+                });
+            });
+        // 点击文件打开
+        el.addEventListener('click', (e) => {
+            if (e.target.classList.contains('file-raw-delete-btn') ||
+                e.target.classList.contains('file-rename-btn')) return;
+            e.stopPropagation();
+            openAppWindow(file.id);
+        });
+        el.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const existing = shadow.querySelector('.explorer-ctx-menu');
+    if (existing) existing.remove();
+    const menu = document.createElement('div');
+    menu.className = 'explorer-ctx-menu';
+    menu.style.cssText = 'position:fixed;z-index:999999;background:var(--win-bg);border:1px solid var(--win-border);border-radius:8px;padding:4px 0;box-shadow:0 8px 24px rgba(0,0,0,0.3);min-width:180px;pointer-events:auto;';
+    function addRow(label, action) {
+        const row = document.createElement('div');
+        row.textContent = label;
+        row.style.cssText = 'padding:8px 16px;cursor:pointer;font-size:13px;color:var(--text-primary);transition:background 0.1s;';
+        row.addEventListener('mouseenter', function() { row.style.background = 'rgba(255,255,255,0.1)'; });
+        row.addEventListener('mouseleave', function() { row.style.background = 'transparent'; });
+        row.addEventListener('click', function() { menu.remove(); action(); });
+        menu.appendChild(row);
+    }
+    addRow('📂 打开', function() { openAppWindow(file.id); });
+    addRow('✏️ 重命名', function() {
+        const n = prompt('重命名:', file.name);
+        if (n && n.trim()) { file.name = n.trim(); saveSystemData(); renderSidebarFiles(); }
+    });
+    addRow('📋 复制内容', function() {
+        if (file.type === 'folder') return;
+        navigator.clipboard.writeText(typeof file.content === 'string' ? file.content : JSON.stringify(file.content)).then(function() {
+            const orig = el.querySelector('.file-info-part span:last-child');
+            const t = orig.textContent; orig.textContent = '✅ 已复制'; setTimeout(function() { orig.textContent = t; }, 1000);
+        });
+    });
+    if (file.type !== 'folder') {
+        addRow('📁 移入文件夹', function() {
+            const folders = OS_DATA.files.filter(function(f) { return f.type === 'folder' && f.id !== file.id; });
+            if (folders.length === 0) { alert('没有可用的文件夹'); return; }
+            const names = folders.map(function(f, i) { return i + '. ' + f.name; }).join('\n');
+            const c = prompt('移入哪个文件夹？\n' + names + '\n\n输入编号:', '0');
+            if (c && parseInt(c) >= 0 && parseInt(c) < folders.length) {
+                const target = folders[parseInt(c)];
+                OS_DATA.files.forEach(function(f) { if (f.type === 'folder' && f.children) f.children = f.children.filter(function(x) { return x !== file.id; }); });
+                if (!target.children) target.children = [];
+                target.children.push(file.id);
+                saveSystemData(); renderSidebarFiles();
+            }
+        });
+    }
+    addRow('🗑️ 删除', function() {
+        if (confirm('确定删除 [' + file.name + ']？')) {
+            if (file.type === 'folder' && file.children) file.children.forEach(function(cid) { OS_DATA.files = OS_DATA.files.filter(function(f) { return f.id !== cid; }); });
+            OS_DATA.files = OS_DATA.files.filter(function(f) { return f.id !== file.id; });
+            OS_DATA.files.forEach(function(f) { if (f.type === 'folder' && f.children) f.children = f.children.filter(function(c) { return c !== file.id; }); });
+            saveSystemData(); renderSidebarFiles();
+        }
+    });
+    menu.style.left = e.clientX + 'px'; menu.style.top = e.clientY + 'px';
+    shadow.appendChild(menu);
+    if (e.clientX + 200 > window.innerWidth) menu.style.left = (window.innerWidth - 204) + 'px';
+    if (e.clientY + 250 > window.innerHeight) menu.style.top = (window.innerHeight - 254) + 'px';
+    setTimeout(function() {
+        var cl = function(ev) { if (!menu.contains(ev.target)) { menu.remove(); shadow.removeEventListener('click', cl, true); shadow.removeEventListener('contextmenu', cl, true); } };
+        shadow.addEventListener('click', cl, true); shadow.addEventListener('contextmenu', cl, true);
+    }, 10);
+});
+        // 重命名
+        el.querySelector('.file-rename-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const newName = prompt('请输入新文件名:', file.name);
+            if (newName && newName.trim() !== '') {
+                file.name = newName.trim();
+                saveSystemData();
+                renderSidebarFiles();
+            }
+        });
+
+        // 删除
+        el.querySelector('.file-raw-delete-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (confirm(`确定要彻底删除 [${file.name}] 吗？`)) {
+                if (file.type === 'folder' && file.children) {
+                    file.children.forEach(childId => {
+                        OS_DATA.files = OS_DATA.files.filter(f => f.id !== childId);
+                    });
+                }
+                OS_DATA.files = OS_DATA.files.filter(f => f.id !== file.id);
+                // 从其他文件夹的children中移除引用
+                OS_DATA.files.forEach(f => {
+                    if (f.type === 'folder' && f.children) {
+                        f.children = f.children.filter(c => c !== file.id);
+                    }
+                });
+                saveSystemData();
+                renderSidebarFiles();
+            }
+        });
+
+        return el;
+    }
+
+    function createFolderNode(folder, depth) {
+        const wrapper = document.createElement('div');
+
+        // 文件夹头
+        const header = document.createElement('div');
+        header.className = 'file-node';
+        header.style.paddingLeft = (16 + depth * 20) + 'px';
+        header.style.cursor = 'pointer';
+        header.innerHTML = `
+            <div class="file-info-part">
+                <span class="folder-toggle-icon">▶</span>
+                <span>📁</span>
+                <span>${folder.name}</span>
+            </div>
+            <div style="display:flex;align-items:center;">
+                <div class="file-rename-btn" title="重命名">✏️</div>
+                <div class="file-raw-delete-btn" title="彻底删除">×</div>
+            </div>
+        `;
+        wrapper.appendChild(header);
+
+        // 子文件容器（默认收起）
+        const childContainer = document.createElement('div');
+        childContainer.className = 'folder-children';
+        childContainer.style.display = 'none'; // 默认收起
+        wrapper.appendChild(childContainer);
+
+        let isExpanded = false;
+        const toggleIcon = header.querySelector('.folder-toggle-icon');
+
+        // 点击文件夹头部：展开/收起
+        header.addEventListener('click', (e) => {
+            if (e.target.classList.contains('file-raw-delete-btn') ||
+                e.target.classList.contains('file-rename-btn')) return;
+            e.stopPropagation();
+
+            isExpanded = !isExpanded;
+            childContainer.style.display = isExpanded ? 'block' : 'none';
+            toggleIcon.textContent = isExpanded ? '▼' : '▶';
+            if (isExpanded) openAppWindow(folder.id);
+
+            if (isExpanded && childContainer.children.length === 0) {
+                // 首次展开时渲染子项
+                renderChildren(folder, childContainer, depth + 1);
+            }
+        });
+
+        // 重命名
+        header.querySelector('.file-rename-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const newName = prompt('请输入新文件夹名:', folder.name);
+            if (newName && newName.trim() !== '') {
+                folder.name = newName.trim();
+                saveSystemData();
+                renderSidebarFiles();
+            }
+        });
+
+        // 删除
+        header.querySelector('.file-raw-delete-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (confirm(`确定要彻底删除文件夹 [${folder.name}] 及其所有内容吗？`)) {
+                if (folder.children) {
+                    folder.children.forEach(childId => {
+                        OS_DATA.files = OS_DATA.files.filter(f => f.id !== childId);
+                    });
+                }
+                OS_DATA.files = OS_DATA.files.filter(f => f.id !== folder.id);
+                saveSystemData();
+                renderSidebarFiles();
+            }
+        });
+        // === 文件夹作为拖拽目标 ===
+        header.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            header.classList.add('folder-drop-target');
+        });
+
+        header.addEventListener('dragleave', function(e) {
+            e.stopPropagation();
+            if (!header.contains(e.relatedTarget)) {
+                header.classList.remove('folder-drop-target');
+            }
+        });
+
+        header.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            header.classList.remove('folder-drop-target');
+
+            var fileId = e.dataTransfer.getData('text/os-file-id');
+            if (!fileId) return;
+
+            // 查找文件
+            var file = OS_DATA.files.find(function(f) { return f.id === fileId; });
+            if (!file) return;
+
+            // 防止拖到同一个文件夹
+            if (file.parentId === folder.id) return;
+
+            // 更新文件的 parentId
+            file.parentId = folder.id;
+            saveSystemData();
+            renderSidebarFiles();
+
+            // 自动展开文件夹，让用户看到文件进去了
+            if (!isExpanded) {
+                isExpanded = true;
+                childContainer.style.display = 'block';
+                toggleIcon.textContent = '▼';
+                renderChildren(folder, childContainer, depth + 1);
+            }
+        });
+        return wrapper;
+    }
+
+    function renderChildren(folder, container, depth) {
+        container.innerHTML = '';
+        if (!folder.children || folder.children.length === 0) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'padding:4px 8px;font-size:12px;color:rgba(255,255,255,0.3);';
+            empty.textContent = '(空文件夹)';
+            container.appendChild(empty);
+            return;
+        }
+        folder.children.forEach(childId => {
+            const child = OS_DATA.files.find(f => f.id === childId);
+            if (!child) return;
+            if (child.type === 'folder') {
+                container.appendChild(createFolderNode(child, depth));
+            } else {
+                container.appendChild(createFileNode(child, depth));
+            }
+        });
+    }
+    if (!listContainer._ctxBound) { listContainer._ctxBound = true; listContainer.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    if (e.target.closest('.file-node') || e.target.closest('.folder-children')) return;
+    const existing = shadow.querySelector('.explorer-ctx-menu');
+    if (existing) existing.remove();
+    const menu = document.createElement('div');
+    menu.className = 'explorer-ctx-menu';
+    menu.style.cssText = 'position:fixed;z-index:999999;background:var(--win-bg);border:1px solid var(--win-border);border-radius:8px;padding:4px 0;box-shadow:0 8px 24px rgba(0,0,0,0.3);min-width:180px;pointer-events:auto;';
+    function addMenuItem(label, action) {
+        const row = document.createElement('div');
+        row.textContent = label;
+        row.style.cssText = 'padding:8px 16px;cursor:pointer;font-size:13px;color:var(--text-primary);transition:background 0.1s;';
+        row.addEventListener('mouseenter', function() { row.style.background = 'rgba(255,255,255,0.1)'; });
+        row.addEventListener('mouseleave', function() { row.style.background = 'transparent'; });
+        row.addEventListener('click', function() { menu.remove(); action(); });
+        menu.appendChild(row);
+    }
+    addMenuItem('📄 新建文件', function() { createNewFile('txt'); });
+    addMenuItem('⚙️ 新建.cpp', function() { createNewFile('cpp'); });
+    addMenuItem('📝 新建.md', function() { createNewFile('md'); });
+    addMenuItem('📊 新建Excel', function() { createNewFile('xlsx'); });
+    addMenuItem('📘 新建Word', function() { createNewFile('docx'); });
+    addMenuItem('📁 新建文件夹', function() { createNewFile('folder'); });
+    addMenuItem('📤 上传文件', function() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.multiple = true;
+        input.accept = '.txt,.cpp,.md,.html,.json,.csv,.js,.py,.css,.xml,.log';
+        input.onchange = function(e) {
+            Array.from(e.target.files).forEach(function(file) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    let type = 'txt';
+                    if (ext === 'cpp' || ext === 'c' || ext === 'h') type = 'cpp';
+                    else if (ext === 'md') type = 'md';
+                    else if (ext === 'xlsx' || ext === 'xls') type = 'xlsx';
+                    else if (ext === 'docx' || ext === 'doc') type = 'docx';
+                    const newFile = { id: 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), name: file.name, type: type, content: ev.target.result };
+                    OS_DATA.files.push(newFile);
+                    saveSystemData();
+                    renderSidebarFiles();
+                };
+                reader.readAsText(file);
+            });
+        };
+        input.click();
+    });
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+    shadow.appendChild(menu);
+    if (e.clientX + menu.offsetWidth > window.innerWidth) menu.style.left = (window.innerWidth - menu.offsetWidth - 4) + 'px';
+    if (e.clientY + menu.offsetHeight > window.innerHeight) menu.style.top = (window.innerHeight - menu.offsetHeight - 4) + 'px';
+    setTimeout(function() {
+        var closeHandler = function(ev) { if (!menu.contains(ev.target)) { menu.remove(); shadow.removeEventListener('click', closeHandler, true); shadow.removeEventListener('contextmenu', closeHandler, true); } };
+        shadow.addEventListener('click', closeHandler, true);
+        shadow.addEventListener('contextmenu', closeHandler, true);
+    }, 10);
+});
+}
+    listContainer.addEventListener('dragover', function(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+    listContainer.addEventListener('drop', function(e) {
+        e.preventDefault();
+        const fileId = e.dataTransfer.getData('text/os-file-id');
+        if (!fileId) return;
+        const target = e.target.closest('.file-node[data-file-id]');
+        if (!target) return;
+        const targetId = target.getAttribute('data-file-id');
+        if (targetId === fileId) return;
+        const targetFile = OS_DATA.files.find(f => f.id === targetId);
+        if (!targetFile || targetFile.type !== 'folder') return;
+        const dragFile = OS_DATA.files.find(f => f.id === fileId);
+        if (!dragFile) return;
+        if (confirm('将 [' + dragFile.name + '] 移入 [' + targetFile.name + ']？')) {
+            OS_DATA.files.forEach(f => { if (f.type === 'folder' && f.children) f.children = f.children.filter(c => c !== fileId); });
+            if (!targetFile.children) targetFile.children = [];
+            targetFile.children.push(fileId);
+            saveSystemData(); renderSidebarFiles();
+        }
+    });
+    // 渲染根目录
+    rootFiles.forEach(file => {
+        if (file.type === 'folder') {
+            listContainer.appendChild(createFolderNode(file, 0));
+        } else {
+            listContainer.appendChild(createFileNode(file, 0));
+        }
+    });
+}
+
+    function createNewFile(type) {
+    if (type === 'folder') {
+        const name = prompt('请输入文件夹名称:', '新文件夹');
+        if (!name) return;
+        const newFolder = { id: 'f_' + Date.now(), name, type: 'folder', content: '', children: [] };
+        OS_DATA.files.push(newFolder); saveSystemData(); renderSidebarFiles();
+        return;
+    }
+    const name = prompt(`请输入自定文件名(.${type}):`, `demo_${Date.now().toString().slice(-4)}.${type}`);
+    if (!name) return;
+    let content = "";
+    if (type === 'xlsx') content = [["","","",""]];
+    if (type === 'cpp') content = '#include <iostream>\nusing namespace std;\nint main() {\n\n return 0;}';
+    if (type === 'docx') content = '<div>请输入文档内容...</div>';
+    if (type === 'md') content = '# 标题\n\n正文内容...\n\n## 子标题\n\n- 列表项1\n- 列表项2\n\n```cpp\ncout << "Hello" << endl;\n```\n';
+    const newFile = { id: 'f_' + Date.now(), name, type, content };
+    const folders = OS_DATA.files.filter(f => f.type === 'folder');
+                function getFolderTree(folder, depth) {
+                    let prefix = '  '.repeat(depth);
+                    let result = [{ folder: folder, label: prefix + '📁 ' + folder.name }];
+                    if (folder.children) {
+                        folder.children.forEach(childId => {
+                            const child = OS_DATA.files.find(f => f.id === childId);
+                            if (child && child.type === 'folder') {
+                                result = result.concat(getFolderTree(child, depth + 1));
+                            }
+                        });
+                    }
+                    return result;
+                }
+                let allFolders = [];
+                folders.forEach(f => {
+                    if (!OS_DATA.files.some(p => p.type === 'folder' && p.children && p.children.includes(f.id))) {
+                        allFolders = allFolders.concat(getFolderTree(f, 0));
+                    }
+                });
+                if (allFolders.length > 0) {
+                    const folderNames = ['根目录（不放入文件夹）', ...allFolders.map(f => f.label)];
+                    const choice = prompt(`将文件放入哪个文件夹？\n${folderNames.map((n, i) => i + '. ' + n).join('\n')}\n\n请输入编号:`, '0');
+            if (choice && parseInt(choice) > 0) {
+                const targetFolder = allFolders[parseInt(choice) - 1].folder;
+                if (targetFolder) { if (!targetFolder.children) targetFolder.children = []; targetFolder.children.push(newFile.id); }
+            }
+    }
+    OS_DATA.files.push(newFile); saveSystemData(); renderSidebarFiles(); openAppWindow(newFile.id);
+    }
+
+    shadow.getElementById('sbar-new-txt').onclick = () => createNewFile('txt');
+    shadow.getElementById('sbar-new-cpp').onclick = () => createNewFile('cpp');
+    shadow.getElementById('sbar-new-md').onclick = () => createNewFile('md');
+    shadow.getElementById('sbar-new-xlsx').onclick = () => createNewFile('xlsx');
+    shadow.getElementById('sbar-new-docx').onclick = () => createNewFile('docx');
+    shadow.getElementById('sbar-new-folder').onclick = () => createNewFile('folder');
+
+    // --- 窗口记忆 ---
+    function getWindowRect(win) { const rect = win.getBoundingClientRect(); return { top: Math.round(rect.top) + 'px', left: Math.round(rect.left) + 'px', width: Math.round(rect.width) + 'px', height: Math.round(rect.height) + 'px' }; }
+    function saveWindowState(winId, extraData) { if (!OS_DATA.settings.rememberWindows) return; const win = shadow.getElementById(winId); if (!win) return; const rect = getWindowRect(win); const state = { winId, id: extraData.id, type: extraData.type, top: rect.top, left: rect.left, width: rect.width, height: rect.height }; const existing = OS_DATA.openWindows.find(w => w.id === extraData.id); if (existing) Object.assign(existing, state); else OS_DATA.openWindows.push(state); saveSystemData(); }
+    function removeWindowState(extraId) { if (!OS_DATA.settings.rememberWindows) return; OS_DATA.openWindows = OS_DATA.openWindows.filter(w => w.id !== extraId); saveSystemDataNow(); }
+    function restoreWindows() { const windowsToRestore = JSON.parse(JSON.stringify(OS_DATA.openWindows)); windowsToRestore.forEach(wState => { if (wState.type === 'ai-chat') openAIChatWindow(wState); else openAppWindow(wState.id, wState); }); }
+
+    // --- 窗口拖动/拉伸/最小化/全屏 ---
+    function bindWindowDragAndResize(win, header, resizeHandle, extraData) {
+        let isDragging = false, shiftX, shiftY;
+        header.addEventListener('mousedown', (e) => { if (e.target.closest('.win-ctrl-btn') || e.target.closest('.win-btn-save')) return; isDragging = true; shiftX = e.clientX - win.getBoundingClientRect().left; shiftY = e.clientY - win.getBoundingClientRect().top; document.body.style.userSelect = 'none'; });
+        let isResizing = false, startW, startH, startX, startY;
+        resizeHandle.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); isResizing = true; startW = win.offsetWidth; startH = win.offsetHeight; startX = e.clientX; startY = e.clientY; });
+        document.addEventListener('mousemove', (e) => { if (isDragging && !win.classList.contains('maximized')) { let left = e.clientX - shiftX; let top = e.clientY - shiftY; if (top < 0) top = 0;if (left < -win.offsetWidth + 100) left = -win.offsetWidth + 100;if (left > window.innerWidth - 100) left = window.innerWidth - 100; win.style.left = left + 'px'; win.style.top = top + 'px'; if (extraData) saveWindowState(win.id, extraData); } if (isResizing && !win.classList.contains('maximized')) { win.style.width = Math.max(450, startW + (e.clientX - startX)) + 'px'; win.style.height = Math.max(300, startH + (e.clientY - startY)) + 'px'; if (extraData) saveWindowState(win.id, extraData); } });
+        document.addEventListener('mouseup', () => { if (isDragging || isResizing) { if (extraData) { saveWindowState(win.id, extraData); saveSystemDataNow(); } } isDragging = false; isResizing = false; document.body.style.userSelect = ''; });
+    }
+
+    function bindWindowControls(win, title, extraData) {
+        const savedState = { top: '', left: '', width: '', height: '' };
+        win.querySelector('.win-btn-min').addEventListener('click', (e) => { e.stopPropagation(); win.classList.add('minimized'); const minItem = document.createElement('div'); minItem.className = 'taskbar-minimized-item'; minItem.setAttribute('data-win-id', win.id); minItem.innerHTML = `<span>${title}</span><span style="margin-left:6px;cursor:pointer;opacity:0.6;font-size:14px;" class="min-item-close" title="关闭窗口">✕</span>`; minItem.addEventListener('click', () => { win.classList.remove('minimized'); win.style.zIndex = ++zIndexCounter; const item = taskbarMinList.querySelector(`[data-win-id="${win.id}"]`); if (item) item.remove(); }); taskbarMinList.appendChild(minItem); });
+        win.querySelector('.win-btn-max').addEventListener('click', (e) => { e.stopPropagation(); if (win.classList.contains('maximized')) { win.classList.remove('maximized'); win.style.top = savedState.top; win.style.left = savedState.left; win.style.width = savedState.width; win.style.height = savedState.height; } else { savedState.top = win.style.top; savedState.left = win.style.left; savedState.width = win.style.width; savedState.height = win.style.height; win.classList.add('maximized'); } });
+        win.querySelector('.os-window-header').addEventListener('dblclick', (e) => { if (e.target.closest('.win-ctrl-btn') || e.target.closest('.win-btn-save')) return; win.querySelector('.win-btn-max').click(); });
+    }
+
+    // --- 5. AI 对话 ---
+    function openAIChatWindow(restoreState) {
+        const openWinId = `win-ai-chat-terminal`;
+        const activeModelName = OS_DATA.settings.activeModel;
+        if (shadow.getElementById(openWinId)) {
+            const w = shadow.getElementById(openWinId);
+            if (w.classList.contains('minimized')) { w.classList.remove('minimized'); const item = taskbarMinList.querySelector(`[data-win-id="${openWinId}"]`); if (item) item.remove(); }
+            w.style.zIndex = ++zIndexCounter; return;
+        }
+        const win = document.createElement('div');
+        win.className = 'os-window'; win.id = openWinId;
+        win.style.zIndex = ++zIndexCounter;
+        if (restoreState) { win.style.width = restoreState.width || '520px'; win.style.height = restoreState.height || '600px'; win.style.top = restoreState.top || '60px'; win.style.left = restoreState.left || '280px'; }
+        else { win.style.width = '520px'; win.style.height = '600px'; win.style.top = '60px'; win.style.left = '280px'; }
+
+        let convListHTML = '';
+        OS_DATA.aiConversations.forEach((conv, idx) => {
+            convListHTML += `<div class="ai-conv-item" data-conv-idx="${idx}"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(conv.title)}</span><span class="ai-conv-del" data-conv-del-idx="${idx}" title="删除此对话">×</span></div>`;
+        });
+
+        win.innerHTML = `
+            <div class="os-window-header">
+                <span>🤖 AI 智能终端 (${activeModelName})</span>
+                <div class="window-controls-group">
+                    <div class="win-ctrl-btn win-btn-min" title="最小化">—</div>
+                    <div class="win-ctrl-btn win-btn-max" title="最大化/还原">□</div>
+                    <div class="win-ctrl-btn win-btn-close" title="关闭">×</div>
+                </div>
+            </div>
+            <div class="os-window-body" style="background: var(--win-bg); display: flex; flex-direction: column;">
+                <div style="display:flex; border-bottom:1px solid rgba(255,255,255,0.1);">
+                    <div style="flex:1; padding:8px 12px; display:flex; align-items:center; justify-content:space-between;">
+                        <span style="font-size:12px; color:var(--text-secondary);">💬 对话列表</span>
+                        <span id="ai-new-conv-btn" style="cursor:pointer; font-size:18px; color:var(--accent-color); padding:0 4px;" title="新建对话">＋</span>
+                    </div>
+                </div>
+                <div id="ai-conv-sidebar" style="max-height:140px; overflow-y:auto; padding:4px 8px; border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <div class="ai-conversation-list">${convListHTML}</div>
+                </div>
+                <div id="ai-chat-history" style="flex-grow: 1; padding: 15px; overflow-y: auto; color: var(--text-primary); font-family: 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6;">
+                    <div style="color: #4ec9b0; margin-bottom: 10px;">[System] AI 终端已初始化。当前计算模型: ${activeModelName}</div>
+                    ${!OS_DATA.settings.apiKey ? '<div style="color: #ff5f56; margin-bottom: 10px;">[Warning] 未检测到 API Key，请先在设置中配置！</div>' : ''}
+                </div>
+                <div style="border-top: 1px solid #333; padding: 10px; background: var(--settings-body-bg); display: flex;">
+                    <textarea id="ai-chat-input" style="flex-grow: 1; background: var(--input-bg); border: 1px solid var(--input-border); color: white; padding: 8px 12px; border-radius: 4px; outline: none; font-size: 13px; resize: none; height: 35px; line-height: 1.4; font-family: inherit;" placeholder="输入指令 (Enter 发送，Ctrl+Enter 换行)..."></textarea>
+                </div>
+            </div>
+            <div class="os-window-resize-handle"></div>
+        `;
+        desktop.appendChild(win);
+
+        const historyPanel = win.querySelector('#ai-chat-history');
+        const chatInput = win.querySelector('#ai-chat-input');
+        const convSidebar = win.querySelector('#ai-conv-sidebar');
+        let currentConvIdx = -1;
+        let conversation = [];
+
+        function renderConvList() {
+            const list = convSidebar.querySelector('.ai-conversation-list');
+            list.innerHTML = '';
+            OS_DATA.aiConversations.forEach((conv, idx) => {
+                const item = document.createElement('div');
+                item.className = 'ai-conv-item' + (idx === currentConvIdx ? ' active' : '');
+                item.setAttribute('data-conv-idx', idx);
+                item.innerHTML = `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(conv.title)}</span><span class="ai-conv-del" data-conv-del-idx="${idx}" title="删除此对话">×</span>`;
+                item.addEventListener('click', (e) => { if (e.target.classList.contains('ai-conv-del')) return; loadConversation(idx); });
+                item.querySelector('.ai-conv-del').addEventListener('click', (e) => { e.stopPropagation(); if (confirm('确定删除此对话？')) { OS_DATA.aiConversations.splice(idx, 1); if (currentConvIdx === idx) { currentConvIdx = -1; conversation = []; historyPanel.innerHTML = `<div style="color: #4ec9b0;">[System] 对话已删除。请选择或新建对话。</div>`; } else if (currentConvIdx > idx) currentConvIdx--; saveSystemDataNow(); renderConvList(); } });
+                list.appendChild(item);
+            });
+        }
+
+        function loadConversation(idx) {
+            currentConvIdx = idx;
+            const conv = OS_DATA.aiConversations[idx];
+            if (!conv) return;
+            conversation = conv.messages.slice();
+            historyPanel.innerHTML = '';
+            conv.messages.forEach(msg => {
+                if (msg.role === 'user') {
+                    historyPanel.innerHTML += `<div class="ai-chat-msg user-msg"><div class="ai-msg-label" style="color:#57a6ff;">You</div><div>${escapeHTML(msg.content).replace(/\n/g, '<br>')}</div><div class="ai-msg-del" data-msg-id="${msg.id}" title="删除此消息">×</div></div>`;
+                } else if (msg.role === 'assistant') {
+                    historyPanel.innerHTML += `<div class="ai-chat-msg ai-msg"><div class="ai-msg-label" style="color:#4ec9b0;">AI</div><div>${renderMarkdown(msg.content)}</div><div class="ai-msg-del" data-msg-id="${msg.id}" title="删除此消息">×</div></div>`;
+                }
+            });
+            historyPanel.scrollTop = historyPanel.scrollHeight;
+            renderConvList();
+        }
+
+        win.querySelector('#ai-new-conv-btn').addEventListener('click', () => {
+            const newConv = { id: 'conv_' + Date.now(), title: '新对话 ' + (OS_DATA.aiConversations.length + 1), messages: [], createdAt: Date.now() };
+            OS_DATA.aiConversations.unshift(newConv);
+            saveSystemDataNow(); loadConversation(0); renderConvList();
+        });
+
+        historyPanel.addEventListener('click', (e) => {
+            const delBtn = e.target.closest('.ai-msg-del');
+            if (!delBtn) return;
+            const msgId = delBtn.getAttribute('data-msg-id');
+            if (currentConvIdx < 0) return;
+            const conv = OS_DATA.aiConversations[currentConvIdx];
+            conv.messages = conv.messages.filter(m => m.id !== msgId);
+            conversation = conv.messages.slice();
+            saveSystemDataNow(); loadConversation(currentConvIdx);
+        });
+        win.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
+                e.preventDefault();
+                win.querySelector('.win-btn-close').click();
+            }
+        });
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                if (e.ctrlKey) { e.preventDefault(); const s = chatInput.selectionStart; const ed = chatInput.selectionEnd; chatInput.value = chatInput.value.substring(0, s) + "\n" + chatInput.value.substring(ed); chatInput.selectionStart = chatInput.selectionEnd = s + 1; return; }
+                e.preventDefault();
+                if (chatInput.value.trim() !== '') {
+                    const userMsg = chatInput.value.trim(); chatInput.value = '';
+                    if (currentConvIdx < 0) {
+                        const newConv = { id: 'conv_' + Date.now(), title: userMsg.substring(0, 30) + (userMsg.length > 30 ? '...' : ''), messages: [], createdAt: Date.now() };
+                        OS_DATA.aiConversations.unshift(newConv); currentConvIdx = 0; conversation = []; historyPanel.innerHTML = ''; renderConvList();
+                    }
+                    const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+                    const conv = OS_DATA.aiConversations[currentConvIdx];
+                    conv.messages.push({ id: msgId, role: 'user', content: userMsg });
+                    conversation.push({ role: 'user', content: userMsg });
+                    if (conv.messages.length === 1) { conv.title = userMsg.substring(0, 30) + (userMsg.length > 30 ? '...' : ''); renderConvList(); }
+                    historyPanel.innerHTML += `<div class="ai-chat-msg user-msg"><div class="ai-msg-label" style="color:#57a6ff;">You</div><div>${escapeHTML(userMsg).replace(/\n/g, '<br>')}</div><div class="ai-msg-del" data-msg-id="${msgId}" title="删除此消息">×</div></div>`;
+                    historyPanel.scrollTop = historyPanel.scrollHeight; saveSystemDataNow();
+                    if (!OS_DATA.settings.apiKey) { historyPanel.innerHTML += `<div style="color: #ff5f56;">[Error] 缺少 API Key。</div>`; return; }
+                    historyPanel.innerHTML += `<div id="ai-typing" style="margin-bottom: 10px; color: #888;"><i>AI is typing...</i></div>`;
+                    historyPanel.scrollTop = historyPanel.scrollHeight;
+                    const targetModel = OS_DATA.settings.activeModel;
+                    const apiMessages = conversation.map(m => ({ role: m.role, content: m.content }));
+                    GM_xmlhttpRequest({
+                        method: "POST", url: "https://api.apilio.ai/v1/chat/completions",
+                        headers: { "Authorization": "Bearer " + OS_DATA.settings.apiKey, "Content-Type": "application/json" },
+                        data: JSON.stringify({ model: targetModel, messages: apiMessages }),
+                        onload: function(response) {
+                            const ti = win.querySelector('#ai-typing'); if (ti) ti.remove();
+                            try {
+                                const res = JSON.parse(response.responseText);
+                                if (res.choices && res.choices.length > 0) {
+                                    const aiReply = res.choices[0].message.content;
+                                    const aiMsgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+                                    conv.messages.push({ id: aiMsgId, role: 'assistant', content: aiReply });
+                                    conversation.push({ role: 'assistant', content: aiReply });
+                                    historyPanel.innerHTML += `<div class="ai-chat-msg ai-msg"><div class="ai-msg-label" style="color:#4ec9b0;">AI</div><div>${renderMarkdown(aiReply)}</div><div class="ai-msg-del" data-msg-id="${aiMsgId}" title="删除此消息">×</div></div>`;
+                                    saveSystemDataNow();
+                                } else { historyPanel.innerHTML += `<div style="color: #ff5f56;">[Error] ${response.responseText}</div>`; }
+                            } catch (err) { historyPanel.innerHTML += `<div style="color: #ff5f56;">[Error] ${err.message}</div>`; }
+                            historyPanel.scrollTop = historyPanel.scrollHeight;
+                        },
+                        onerror: function() { const ti = win.querySelector('#ai-typing'); if (ti) ti.remove(); historyPanel.innerHTML += `<div style="color: #ff5f56;">[Error] 网络连接失败。</div>`; historyPanel.scrollTop = historyPanel.scrollHeight; }
+                    });
+                }
+            }
+        });
+
+        if (OS_DATA.aiConversations.length > 0) loadConversation(0);
+        win.addEventListener('mousedown', () => { win.style.zIndex = ++zIndexCounter; }, true);
+        const extraData = { id: 'ai-chat', type: 'ai-chat' };
+        win.querySelector('.win-btn-close').onclick = () => { win.remove(); removeWindowState('ai-chat'); const item = taskbarMinList.querySelector(`[data-win-id="${openWinId}"]`); if (item) item.remove(); };
+        bindWindowDragAndResize(win, win.querySelector('.os-window-header'), win.querySelector('.os-window-resize-handle'), extraData);
+        bindWindowControls(win, '🤖 AI', extraData);
+        if (!restoreState) saveWindowState(openWinId, extraData);
+    }
+
+    // --- C++ Snippets ---
+    const CPP_SNIPPETS = [
+        { name: 'main', prefix: 'main', body: '#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n    $0\n    return 0;\n}' },
+        { name: 'include', prefix: 'inc', body: '#include <${1:iostream}>$0' },
+        { name: 'include_c', prefix: 'incc', body: '#include <${1:cstdio}>$0' },
+        { name: 'define', prefix: 'def', body: '#define ${1:NAME} ${2:VALUE}$0' },
+        { name: 'typedef', prefix: 'td', body: 'typedef ${1:long long} ${2:ll};$0' },
+        { name: 'using', prefix: 'us', body: 'using namespace ${1:std};$0' },
+        { name: 'pragma', prefix: 'prg', body: '#pragma ${1:GCC optimize("O2")}$0' },
+        { name: 'if', prefix: 'if', body: 'if (${1:condition}) {\n    $0\n}' },
+        { name: 'if-else', prefix: 'ife', body: 'if (${1:condition}) {\n    $2\n} else {\n    $0\n}' },
+        { name: 'else-if', prefix: 'elif', body: 'else if (${1:condition}) {\n    $0\n}' },
+        { name: 'switch', prefix: 'sw', body: 'switch (${1:expression}) {\n    case ${2:value}:\n        $0\n        break;\n    default:\n        break;\n}' },
+        { name: 'ternary', prefix: 'ter', body: '(${1:condition}) ? ${2:true_val} : ${3:false_val}$0' },
+        { name: 'for', prefix: 'for', body: 'for (int i = 0; i < ${1:n}; i++) {\n    $0\n}' },
+        { name: 'for_reverse', prefix: 'forr', body: 'for (int i = ${1:n} - 1; i >= 0; i--) {\n    $0\n}' },
+        { name: 'for_range', prefix: 'fora', body: 'for (auto& ${1:elem} : ${2:container}) {\n    $0\n}' },
+        { name: 'while', prefix: 'while', body: 'while (${1:condition}) {\n    $0\n}' },
+        { name: 'do-while', prefix: 'dow', body: 'do {\n    $0\n} while (${1:condition});' },
+        { name: 'cout', prefix: 'cout', body: 'cout << ${1:value} << endl;$0' },
+        { name: 'cin', prefix: 'cin', body: 'cin >> ${1:variable};$0' },
+        { name: 'printf', prefix: 'pf', body: 'printf("${1:%d}\\n", ${2:value});$0' },
+        { name: 'scanf', prefix: 'sf', body: 'scanf("${1:%d}", &${2:variable});$0' },
+        { name: 'freopen', prefix: 'fr', body: 'freopen("${1:input.txt}", "r", stdin);\nfreopen("${2:output.txt}", "w", stdout);$0' },
+        { name: 'ios_sync', prefix: 'ios', body: 'ios::sync_with_stdio(false);\ncin.tie(0);$0' },
+        { name: 'vector', prefix: 'vec', body: 'vector<${1:int}> ${2:v};$0' },
+        { name: 'vector_init', prefix: 'veci', body: 'vector<${1:int}> ${2:v}(${3:n}, ${4:0});$0' },
+        { name: 'vector_2d', prefix: 'vec2', body: 'vector<vector<${1:int}>> ${2:mat}(${3:n}, vector<${1:int}>(${4:m}, ${5:0}));$0' },
+        { name: 'pair', prefix: 'pair', body: 'pair<${1:int}, ${2:int}> ${3:p};$0' },
+        { name: 'map', prefix: 'map', body: 'map<${1:int}, ${2:int}> ${3:m};$0' },
+        { name: 'unordered_map', prefix: 'umap', body: 'unordered_map<${1:string}, ${2:int}> ${3:m};$0' },
+        { name: 'set', prefix: 'set', body: 'set<${1:int}> ${2:s};$0' },
+        { name: 'unordered_set', prefix: 'uset', body: 'unordered_set<${1:int}> ${2:s};$0' },
+        { name: 'stack', prefix: 'stk', body: 'stack<${1:int}> ${2:stk};$0' },
+        { name: 'queue', prefix: 'q', body: 'queue<${1:int}> ${2:q};$0' },
+        { name: 'priority_queue', prefix: 'pq', body: 'priority_queue<${1:int}> ${2:pq};$0' },
+        { name: 'priority_queue_min', prefix: 'pqm', body: 'priority_queue<${1:int}, vector<${1:int}>, greater<${1:int}>> ${2:pq};$0' },
+        { name: 'deque', prefix: 'dq', body: 'deque<${1:int}> ${2:dq};$0' },
+        { name: 'bitset', prefix: 'bs', body: 'bitset<${1:32}> ${2:b};$0' },
+        { name: 'sort', prefix: 'sort', body: 'sort(${1:v}.begin(), ${1:v}.end());$0' },
+        { name: 'sort_desc', prefix: 'sortd', body: 'sort(${1:v}.begin(), ${1:v}.end(), greater<${2:int}>());$0' },
+        { name: 'sort_custom', prefix: 'sortc', body: 'sort(${1:v}.begin(), ${1:v}.end(), [](const auto& a, const auto& b) {\n    return ${2:a < b};\n});$0' },
+        { name: 'lower_bound', prefix: 'lb', body: 'lower_bound(${1:v}.begin(), ${1:v}.end(), ${2:target})$0' },
+        { name: 'upper_bound', prefix: 'ub', body: 'upper_bound(${1:v}.begin(), ${1:v}.end(), ${2:target})$0' },
+        { name: 'binary_search', prefix: 'bsearch', body: 'bool found = binary_search(${1:v}.begin(), ${1:v}.end(), ${2:target});$0' },
+        { name: 'find', prefix: 'find', body: 'auto it = find(${1:v}.begin(), ${1:v}.end(), ${2:target});$0' },
+        { name: 'reverse', prefix: 'rev', body: 'reverse(${1:v}.begin(), ${1:v}.end());$0' },
+        { name: 'unique', prefix: 'uniq', body: 'sort(${1:v}.begin(), ${1:v}.end());\n${1:v}.erase(unique(${1:v}.begin(), ${1:v}.end()), ${1:v}.end());$0' },
+        { name: 'next_permutation', prefix: 'nperm', body: 'next_permutation(${1:v}.begin(), ${1:v}.end());$0' },
+        { name: 'min_max', prefix: 'mm', body: 'int ans = min(${1:a}, ${2:b});$0' },
+        { name: 'swap', prefix: 'swp', body: 'swap(${1:a}, ${2:b});$0' },
+        { name: 'count', prefix: 'cnt', body: 'int c = count(${1:v}.begin(), ${1:v}.end(), ${2:target});$0' },
+        { name: 'accumulate', prefix: 'acc', body: 'int sum = accumulate(${1:v}.begin(), ${1:v}.end(), ${2:0});$0' },
+        { name: 'func', prefix: 'func', body: '${1:void} ${2:funcName}(${3:params}) {\n    $0\n}' },
+        { name: 'struct', prefix: 'struct', body: 'struct ${1:Name} {\n    $0\n};' },
+        { name: 'struct_cmp', prefix: 'structcmp', body: 'struct ${1:Node} {\n    ${2:int} val;\n    bool operator<(const ${1:Node}& other) const {\n        return ${3:val < other.val};\n    }\n};$0' },
+        { name: 'class', prefix: 'class', body: 'class ${1:ClassName} {\npublic:\n    $0\n};' },
+        { name: 'template', prefix: 'tpl', body: 'template<typename ${1:T}>\n${2:void} ${3:funcName}(${1:T} ${4:arg}) {\n    $0\n}' },
+        { name: 'lambda', prefix: 'lam', body: 'auto ${1:fn} = [](${2:int x}) {\n    $0\n};' },
+        { name: 'constructor', prefix: 'ctor', body: '${1:ClassName}(${2:params}) : ${3:init_list} {\n    $0\n}' },
+        { name: 'dfs', prefix: 'dfs', body: 'void dfs(int u) {\n    visited[u] = true;\n    for (int v : adj[u]) {\n        if (!visited[v]) dfs(v);\n    }\n}$0' },
+        { name: 'bfs', prefix: 'bfs', body: 'void bfs(int start) {\n    queue<int> q;\n    q.push(start);\n    visited[start] = true;\n    while (!q.empty()) {\n        int u = q.front(); q.pop();\n        for (int v : adj[u]) {\n            if (!visited[v]) { visited[v] = true; q.push(v); }\n        }\n    }\n}$0' },
+        { name: 'binary_search_manual', prefix: 'bsm', body: 'int lo = 0, hi = ${1:n} - 1, ans = -1;\nwhile (lo <= hi) {\n    int mid = (lo + hi) / 2;\n    if (${2:check(mid)}) { ans = mid; hi = mid - 1; }\n    else { lo = mid + 1; }\n}$0' },
+        { name: 'dp', prefix: 'dp', body: 'vector<int> dp(${1:n} + 1, 0);\ndp[0] = ${2:0};\nfor (int i = 1; i <= ${1:n}; i++) {\n    dp[i] = ${3:/* transition */};\n}$0' },
+        { name: 'dijkstra', prefix: 'dij', body: 'vector<int> dist(n, INT_MAX);\ndist[${1:start}] = 0;\npriority_queue<pair<int,int>, vector<pair<int,int>>, greater<pair<int,int>>> pq;\npq.push({0, ${1:start}});\nwhile (!pq.empty()) {\n    auto [d, u] = pq.top(); pq.pop();\n    if (d > dist[u]) continue;\n    for (auto [v, w] : adj[u]) {\n        if (dist[u] + w < dist[v]) { dist[v] = dist[u] + w; pq.push({dist[v], v}); }\n    }\n}$0' },
+        { name: 'union_find', prefix: 'uf', body: 'vector<int> parent(${1:n}), rank_(${1:n}, 0);\niota(parent.begin(), parent.end(), 0);\nfunction<int(int)> find = [&](int x) { return parent[x] == x ? x : parent[x] = find(parent[x]); };\nauto unite = [&](int x, int y) {\n    int rx = find(x), ry = find(y); if (rx == ry) return false;\n    if (rank_[rx] < rank_[ry]) swap(rx, ry); parent[ry] = rx;\n    if (rank_[rx] == rank_[ry]) rank_[rx]++; return true;\n};$0' },
+        { name: 'topo_sort', prefix: 'topo', body: 'vector<int> order;\nqueue<int> q;\nfor (int i = 0; i < ${1:n}; i++) { if (indegree[i] == 0) q.push(i); }\nwhile (!q.empty()) {\n    int u = q.front(); q.pop(); order.push_back(u);\n    for (int v : adj[u]) { if (--indegree[v] == 0) q.push(v); }\n}\n$0' },
+        { name: 'gcd', prefix: 'gcd', body: 'int gcd(int a, int b) { return b == 0 ? a : gcd(b, a % b); }$0' },
+        { name: 'lcm', prefix: 'lcm', body: 'int lcm(int a, int b) { return a / gcd(a, b) * b; }$0' },
+        { name: 'quick_pow', prefix: 'qpow', body: 'long long qpow(long long a, long long b, long long mod) {\n    long long res = 1;\n    while (b) { if (b & 1) res = res * a % mod; a = a * a % mod; b >>= 1; }\n    return res;\n}$0' },
+        { name: 'head_all', prefix: 'head', body: '#include <bits/stdc++.h>\nusing namespace std;\n$0' },
+        { name: 'head_comp', prefix: 'headc', body: '#include <iostream>\n#include <vector>\n#include <algorithm>\n#include <string>\n#include <map>\n#include <set>\n#include <queue>\n#include <stack>\n#include <cmath>\n#include <cstring>\n#include <functional>\nusing namespace std;\n$0' },
+        { name: 'macro_all', prefix: 'mac', body: 'typedef long long ll;\ntypedef pair<int, int> pii;\n#define pb push_back\n#define mp make_pair\n#define fi first\n#define se second\n#define rep(i, a, n) for (int i = a; i < n; i++)\n#define per(i, a, n) for (int i = n - 1; i >= a; i--)\n$0' },
+        { name: 'debug', prefix: 'dbg', body: '#ifdef LOCAL\n#define debug(x) cerr << #x << " = " << (x) << endl\n#else\n#define debug(x)\n#endif$0' },
+        { name: 'string_split', prefix: 'ssplit', body: 'vector<string> split(const string& s, char delim) {\n    vector<string> tokens; stringstream ss(s); string token;\n    while (getline(ss, token, delim)) tokens.push_back(token);\n    return tokens;\n}$0' },
+        { name: 'to_string', prefix: 'tstr', body: 'string s = to_string(${1:123});$0' },
+        { name: 'stoi', prefix: 'stoi', body: 'int x = stoi(${1:"123"});$0' },
+        { name: 'bit_count', prefix: 'bcount', body: 'int cnt = __builtin_popcount(${1:x});$0' },
+        { name: 'bit_low', prefix: 'blow', body: 'int lowbit = ${1:x} & -${1:x};$0' },
+        { name: 'is_prime', prefix: 'isprime', body: 'bool isPrime(int n) {\n    if (n < 2) return false;\n    for (int i = 2; i * i <= n; i++) { if (n % i == 0) return false; }\n    return true;\n}$0' },
+        { name: 'sieve', prefix: 'sieve', body: 'vector<bool> isPrime(${1:n} + 1, true);\nisPrime[0] = isPrime[1] = false;\nfor (int i = 2; i * i <= ${1:n}; i++) {\n    if (isPrime[i]) { for (int j = i * i; j <= ${1:n}; j += i) isPrime[j] = false; }\n}$0' },
+        { name: 'abs', prefix: 'abs', body: 'int val = abs(${1:x});$0' },
+        { name: 'mod', prefix: 'mod', body: 'const int MOD = ${1:1e9 + 7};$0' },
+        { name: 'memset', prefix: 'ms', body: 'memset(${1:arr}, ${2:0}, sizeof(${1:arr}));$0' },
+        { name: 'fill', prefix: 'fill', body: 'fill(${1:v}.begin(), ${1:v}.end(), ${2:0});$0' },
+        { name: 'max_element', prefix: 'maxe', body: 'int mx = *max_element(${1:v}.begin(), ${1:v}.end());$0' },
+        { name: 'min_element', prefix: 'mine', body: 'int mn = *min_element(${1:v}.begin(), ${1:v}.end());$0' },
+        { name: 'emplace_back', prefix: 'epb', body: '${1:v}.emplace_back(${2:args});$0' },
+        { name: 'tie', prefix: 'tie', body: 'auto [${1:a}, ${2:b}] = ${3:p};$0' }
+    ];
+
+    // ============================================================
+    // 【修复】未匹配括号检测 — 使用独立栈
+    // 旧算法：单个栈，遇到闭合括号时从栈顶往下找匹配的开括号，
+    //         把中间所有不匹配的开括号都标记为未匹配 → 错误！
+    //         例如 "({)}" → 遇到 ) 时，栈=[{, (]，从栈顶找到 ( 配对，
+    //         但中间的 { 也被标记为未匹配 → 错！实际上 { 和 } 是配对的！
+    //
+    // 新算法：每种括号类型各维护一个独立栈
+    //         遇到 ) 只看 ( 栈，遇到 ] 只看 [ 栈，遇到 } 只看 { 栈
+    //         这样不同类型的括号互不干扰
+    // ============================================================
+    function findUnmatchedBrackets(text) {
+        const result = new Uint8Array(text.length);
+
+        // 每种括号类型独立栈
+        const stacks = {
+            '(': [],  // round brackets
+            '[': [],  // square brackets
+            '{': []   // curly brackets
+        };
+        const matchMap = { ')': '(', ']': '[', '}': '{' };
+
+        // 先扫描标记字符串和注释，跳过它们
+        const inString = new Uint8Array(text.length);
+        const inComment = new Uint8Array(text.length);
+
+        for (let i = 0; i < text.length; i++) {
+            const ch = text[i];
+            // 检测字符串
+            if (ch === '"' || ch === "'") {
+                const quote = ch;
+                inString[i] = 1;
+                i++;
+                while (i < text.length) {
+                    if (text[i] === '\\') { inString[i] = 1; i++; if (i < text.length) inString[i] = 1; i++; continue; }
+                    if (text[i] === quote) { inString[i] = 1; break; }
+                    inString[i] = 1;
+                    i++;
+                }
+                continue;
+            }
+            // 检测单行注释
+            if (ch === '/' && i + 1 < text.length && text[i + 1] === '/') {
+                while (i < text.length && text[i] !== '\n') { inComment[i] = 1; i++; }
+                i--;
+                continue;
+            }
+            // 检测多行注释
+            if (ch === '/' && i + 1 < text.length && text[i + 1] === '*') {
+                inComment[i] = 1; i++; inComment[i] = 1; i++;
+                while (i < text.length) {
+                    if (text[i] === '*' && i + 1 < text.length && text[i + 1] === '/') {
+                        inComment[i] = 1; i++; inComment[i] = 1; break;
+                    }
+                    inComment[i] = 1; i++;
+                }
+                continue;
+            }
+        }
+
+        // 实际括号匹配
+        for (let i = 0; i < text.length; i++) {
+            if (inString[i] || inComment[i]) continue;
+            const ch = text[i];
+
+            if (ch === '(' || ch === '[' || ch === '{') {
+                stacks[ch].push(i);
+            }
+            else if (ch === ')' || ch === ']' || ch === '}') {
+                const openChar = matchMap[ch];
+                const stack = stacks[openChar];
+                if (stack.length > 0) {
+                    stack.pop(); // 匹配成功，弹出
+                } else {
+                    result[i] = 1; // 没有匹配的开括号，标记为未匹配
+                }
+            }
+        }
+
+        // 栈中剩余的都是未匹配的开括号
+        for (const key in stacks) {
+            for (const idx of stacks[key]) {
+                result[idx] = 1;
+            }
+        }
+
+        return result;
+    }
+
+    function buildBracketHighlightHTML(text, unmatched) {
+        let html = '';
+        for (let i = 0; i < text.length; i++) {
+            const ch = text[i];
+            if (unmatched[i]) {
+                const escaped = ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch;
+                html += `<span class="unmatched">${escaped}</span>`;
+            } else if (ch === '<') html += '&lt;';
+            else if (ch === '>') html += '&gt;';
+            else if (ch === '&') html += '&amp;';
+            else html += ch;
+        }
+        return html;
+    }
+
+    // --- 6. 文件窗口工厂 ---
+    function openAppWindow(fileId, restoreState) {
+        const file = OS_DATA.files.find(f => f.id === fileId);
+        if (!file) return;
+        const openWinId = `win-runtime-${file.id}`;
+        if (shadow.getElementById(openWinId)) {
+            const w = shadow.getElementById(openWinId);
+            if (w.classList.contains('minimized')) { w.classList.remove('minimized'); const item = taskbarMinList.querySelector(`[data-win-id="${openWinId}"]`); if (item) item.remove(); }
+            w.style.zIndex = ++zIndexCounter; return;
+        }
+        const win = document.createElement('div');
+        win.className = 'os-window'; win.id = openWinId;
+        win.style.zIndex = ++zIndexCounter;
+        if (restoreState) { win.style.top = restoreState.top || '100px'; win.style.left = restoreState.left || '300px'; win.style.width = restoreState.width || '780px'; win.style.height = restoreState.height || '580px'; }
+        else { const offset = (zIndexCounter % 8) * 20; win.style.top = `${80 + offset}px`; win.style.left = `${280 + offset}px`; win.style.width = '780px'; win.style.height = '580px'; }
+        win.innerHTML = `
+            <div class="os-window-header">
+                <span>${file.name}</span>
+                <div class="window-controls-group">
+                    <div class="win-btn-save" title="安全下载">💾</div>
+                    <div class="win-ctrl-btn win-btn-min" title="最小化">—</div>
+                    <div class="win-ctrl-btn win-btn-max" title="最大化/还原">□</div>
+                    <div class="win-ctrl-btn win-btn-close" title="关闭">×</div>
+                </div>
+            </div>
+            <div class="os-window-body"></div>
+            <div class="os-window-resize-handle"></div>
+        `;
+        win.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveSystemDataNow();
+                const origTitle = win.querySelector('.os-window-header span');
+                const origText = origTitle.textContent;
+                origTitle.textContent = '✅ 已保存 - ' + origText;
+                setTimeout(function() { origTitle.textContent = origText; }, 1200);
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
+                e.preventDefault();
+                win.querySelector('.win-btn-close').click();
+            }
+        });
+        desktop.appendChild(win);
+        win.style.display = 'flex';
+        const bodyContainer = win.querySelector('.os-window-body');
+                if (file.type === 'folder') {
+            const explorerDiv = document.createElement('div');
+            explorerDiv.style.cssText = 'display:flex;flex-direction:column;height:100%;background:var(--settings-body-bg);';
+            explorerDiv.innerHTML = '<div class="explorer-toolbar" style="display:flex;align-items:center;padding:6px 12px;border-bottom:1px solid var(--border-color);gap:8px;font-size:12px;color:var(--text-secondary);"><span>📂 ' + file.name + '</span></div><div class="explorer-content" style="flex:1;overflow-y:auto;padding:8px;"></div>';
+            bodyContainer.appendChild(explorerDiv);
+            const explorerContent = explorerDiv.querySelector('.explorer-content');
+
+            function renderExplorer() {
+                let html = '';
+                if (!file.children || file.children.length === 0) {
+                    html = '<div style="color:var(--text-secondary);font-size:13px;padding:40px;text-align:center;">此文件夹为空<br><span style="font-size:11px;">右键点击空白处可新建或上传</span></div>';
+                } else {
+                    file.children.forEach(function(childId) {
+                        const child = OS_DATA.files.find(function(f) { return f.id === childId; });
+                        if (!child) return;
+                        let icon = '📄';
+                        if (child.type === 'cpp') icon = '⚙️';
+                        if (child.type === 'xlsx') icon = '📊';
+                        if (child.type === 'docx') icon = '📘';
+                        if (child.type === 'md') icon = '📝';
+                        if (child.type === 'folder') icon = '📁';
+                        html += '<div class="explorer-item" data-child-id="' + child.id + '" style="padding:8px 12px;margin:2px 4px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:10px;color:var(--text-primary);font-size:13px;transition:background 0.15s;">' +
+                            '<span style="font-size:18px;">' + icon + '</span>' +
+                            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + child.name + '</span>' +
+                            '<span style="font-size:11px;color:var(--text-secondary);">' + child.type.toUpperCase() + '</span>' +
+                            '</div>';
+                    });
+                }
+                explorerContent.innerHTML = html;
+                explorerContent.querySelectorAll('.explorer-item').forEach(function(item) {
+                    item.addEventListener('click', function(e) {
+                    var childId = item.getAttribute('data-child-id');
+                    if (childId) {
+                        openAppWindow(childId);
+                    } else if (file.type === 'folder') {
+                        toggleFolder(file);
+                    }
+                    });
+                    item.addEventListener('contextmenu', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const childId = item.getAttribute('data-child-id');
+                        const childFile = OS_DATA.files.find(function(f) { return f.id === childId; });
+                        if (!childFile) return;
+                        showExplorerContextMenu(e.clientX, e.clientY, [
+                            { label: '📂 打开', action: function() { openAppWindow(childId); } },
+                            { label: '✏️ 重命名', action: function() {
+                                const newName = prompt('重命名：', childFile.name);
+                                if (newName && newName.trim()) { childFile.name = newName.trim(); saveSystemData(); renderExplorer(); renderSidebarFiles(); }
+                            }},
+                            { label: '🗑️ 删除', action: function() {
+                                if (confirm('确定删除 [' + childFile.name + ']？')) {
+                                    OS_DATA.files = OS_DATA.files.filter(function(f) { return f.id !== childId; });
+                                    file.children = file.children.filter(function(c) { return c !== childId; });
+                                    if (childFile.type === 'folder' && childFile.children) {
+                                        childFile.children.forEach(function(cid) { OS_DATA.files = OS_DATA.files.filter(function(f) { return f.id !== cid; }); });
+                                    }
+                                    saveSystemData(); renderExplorer(); renderSidebarFiles();
+                                }
+                            }},
+                            { label: '📤 从文件夹移除', action: function() {
+                                file.children = file.children.filter(function(c) { return c !== childId; });
+                                saveSystemData(); renderExplorer(); renderSidebarFiles();
+                            }}
+                        ]);
+                    });
+                });
+            }
+            renderExplorer();
+
+            function showExplorerContextMenu(x, y, items) {
+                const existing = shadow.querySelector('.explorer-ctx-menu');
+                if (existing) existing.remove();
+                const menu = document.createElement('div');
+                menu.className = 'explorer-ctx-menu';
+                menu.style.cssText = 'position:fixed;z-index:999999;background:var(--win-bg);border:1px solid var(--win-border);border-radius:8px;padding:4px 0;box-shadow:0 8px 24px rgba(0,0,0,0.3);min-width:180px;pointer-events:auto;';
+                items.forEach(function(item) {
+                    const row = document.createElement('div');
+                    row.textContent = item.label;
+                    row.style.cssText = 'padding:8px 16px;cursor:pointer;font-size:13px;color:var(--text-primary);transition:background 0.1s;';
+                    row.addEventListener('mouseenter', function() { row.style.background = 'rgba(255,255,255,0.1)'; });
+                    row.addEventListener('mouseleave', function() { row.style.background = 'transparent'; });
+                    row.addEventListener('click', function() { menu.remove(); item.action(); });
+                    menu.appendChild(row);
+                });
+                menu.style.left = x + 'px';
+                menu.style.top = y + 'px';
+                shadow.appendChild(menu);
+                if (x + menu.offsetWidth > window.innerWidth) menu.style.left = (window.innerWidth - menu.offsetWidth - 4) + 'px';
+                if (y + menu.offsetHeight > window.innerHeight) menu.style.top = (window.innerHeight - menu.offsetHeight - 4) + 'px';
+                setTimeout(function() {
+                    const closeHandler = function(e) { if (!menu.contains(e.target)) { menu.remove(); shadow.removeEventListener('click', closeHandler, true); shadow.removeEventListener('contextmenu', closeHandler, true); } };
+                    shadow.addEventListener('click', closeHandler, true);
+                    shadow.addEventListener('contextmenu', closeHandler, true);
+                }, 10);
+            }
+
+            explorerContent.addEventListener('contextmenu', function(e) {
+                if (e.target.closest('.explorer-item')) return;
+                e.preventDefault();
+                showExplorerContextMenu(e.clientX, e.clientY, [
+                    { label: '📄 新建文件', action: function() {
+                        const name = prompt('文件名：', '新文件.txt');
+                        if (!name || !name.trim()) return;
+                        const ext = name.split('.').pop().toLowerCase();
+                        let type = 'txt';
+                        if (ext === 'cpp' || ext === 'c' || ext === 'h') type = 'cpp';
+                        else if (ext === 'md' || ext === 'markdown') type = 'md';
+                        else if (ext === 'xlsx') type = 'xlsx';
+                        else if (ext === 'docx') type = 'docx';
+                        let content = '';
+                        if (type === 'cpp') content = '#include <iostream>\nusing namespace std;\nint main() {\n\n return 0;}';
+                        if (type === 'md') content = '# 标题\n\n正文内容...\n';
+                        if (type === 'xlsx') content = [["","","",""]];
+                        if (type === 'docx') content = '<div>请输入文档内容...</div>';
+                        const newId = 'f_' + Date.now();
+                        OS_DATA.files.push({ id: newId, name: name.trim(), type: type, content: content });
+                        if (!file.children) file.children = [];
+                        file.children.push(newId);
+                        saveSystemData(); renderExplorer(); renderSidebarFiles(); openAppWindow(newId);
+                    }},
+                    { label: '📁 新建文件夹', action: function() {
+                        const name = prompt('文件夹名：', '新文件夹');
+                        if (!name || !name.trim()) return;
+                        const newId = 'f_' + Date.now();
+                        OS_DATA.files.push({ id: newId, name: name.trim(), type: 'folder', children: [] });
+                        if (!file.children) file.children = [];
+                        file.children.push(newId);
+                        saveSystemData(); renderExplorer(); renderSidebarFiles();
+                    }},
+                    { label: '📤 上传文件到此文件夹', action: function() {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.multiple = true;
+                        input.accept = '.txt,.md,.cpp,.c,.h,.xlsx,.docx,.json,.csv';
+                        input.addEventListener('change', function() {
+                            Array.from(input.files).forEach(function(f) {
+                                const ext = f.name.split('.').pop().toLowerCase();
+                                let type = 'txt';
+                                if (ext === 'cpp' || ext === 'c' || ext === 'h') type = 'cpp';
+                                else if (ext === 'md' || ext === 'markdown') type = 'md';
+                                else if (ext === 'xlsx') type = 'xlsx';
+                                else if (ext === 'docx') type = 'docx';
+                                const newId = 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+                                const reader = new FileReader();
+                                reader.onload = function(ev) {
+                                    OS_DATA.files.push({ id: newId, name: f.name, type: type, content: ev.target.result || '' });
+                                    if (!file.children) file.children = [];
+                                    file.children.push(newId);
+                                    saveSystemData(); renderExplorer(); renderSidebarFiles();
+                                };
+                                reader.readAsText(f);
+                            });
+                        });
+                        input.click();
+                    }}
+                ]);
+            });
+        }
+        else if (file.type === 'md') {
+            const mdContainer = document.createElement('div'); mdContainer.className = 'md-preview-container';
+            mdContainer.innerHTML = `
+                <div class="md-toolbar">
+                    <div style="display:flex;gap:4px;">
+                        <div class="md-toolbar-btn active" id="md-split-btn">分屏预览</div>
+                        <div class="md-toolbar-btn" id="md-edit-btn">仅编辑</div>
+                        <div class="md-toolbar-btn" id="md-preview-btn">仅预览</div>
+                    </div>
+                    <span style="color:var(--text-secondary);">Markdown</span>
+                </div>
+                <div class="md-split-view" id="md-split-view">
+                    <div class="md-editor-pane" id="md-editor-pane">
+                        <textarea class="os-textarea" spellcheck="false" id="md-textarea" style="height:100%;"></textarea>
+                    </div>
+                    <div class="md-preview-pane" id="md-preview-pane"></div>
+                </div>
+            `;
+            bodyContainer.appendChild(mdContainer);
+            const mdTextarea = mdContainer.querySelector('#md-textarea');
+            const mdPreview = mdContainer.querySelector('#md-preview-pane');
+            const mdEditorPane = mdContainer.querySelector('#md-editor-pane');
+            mdTextarea.value = file.content;
+            const updateMdPreview = () => { mdPreview.innerHTML = renderMarkdown(mdTextarea.value); };
+            mdTextarea.addEventListener('input', () => { file.content = mdTextarea.value; saveSystemData(); updateMdPreview(); });
+            updateMdPreview();
+            mdContainer.querySelector('#md-split-btn').addEventListener('click', (e) => { mdContainer.querySelectorAll('.md-toolbar-btn').forEach(b => b.classList.remove('active')); e.target.classList.add('active'); mdEditorPane.style.display = 'flex'; mdPreview.style.display = 'block'; mdEditorPane.style.flex = '1'; mdPreview.style.flex = '1'; });
+            mdContainer.querySelector('#md-edit-btn').addEventListener('click', (e) => { mdContainer.querySelectorAll('.md-toolbar-btn').forEach(b => b.classList.remove('active')); e.target.classList.add('active'); mdEditorPane.style.display = 'flex'; mdPreview.style.display = 'none'; mdEditorPane.style.flex = '1'; });
+            mdContainer.querySelector('#md-preview-btn').addEventListener('click', (e) => { mdContainer.querySelectorAll('.md-toolbar-btn').forEach(b => b.classList.remove('active')); e.target.classList.add('active'); mdEditorPane.style.display = 'none'; mdPreview.style.display = 'block'; mdPreview.style.flex = '1'; });
+            bindCtrlWheelZoom(mdTextarea);
+        }
+        else if (file.type === 'txt' || file.type === 'cpp') {
+            const isCpp = file.type === 'cpp';
+            const editorContainer = document.createElement('div'); editorContainer.className = 'code-editor-container';
+            editorContainer.innerHTML = `
+                <div class="vscode-tabs-bar">
+                    <div class="vscode-tab-item">⚙️ ${file.name}</div>
+                    <div style="position: relative; display: flex; align-items: center; gap: 8px;">
+                        ${isCpp ? '<div class="vscode-run-btn" title="编译并运行代码">▶ 运行代码</div><div class="vscode-snippet-btn" title="Snippets 代码片段" style="color: #dcdcaa; cursor: pointer; font-size: 13px; padding: 4px 12px; border-radius: 4px; display: flex; align-items: center; font-weight: bold; background: rgba(220,220,170,0.1);">📋 Snippets</div>' : ''}
+                    </div>
+                </div>
+                <div class="code-editor-main-split">
+                    <div class="code-gutter"><div>1</div></div>
+                    <div class="code-textarea-wrap">
+                        <div class="bracket-highlight-layer"></div>
+                        <textarea class="os-textarea" spellcheck="false"></textarea>
+                    </div>
+                </div>
+                ${isCpp ? `<div class="vscode-terminal-panel">
+                    <div class="terminal-header"><div><span class="active">控制台输出 (Stdout / Stderr)</span></div><div style="color:#6a9955; font-size:10px;">由高可用加速专用编译沙盒驱动</div></div>
+                    <div class="terminal-main-layout">
+                        <div class="terminal-body">GNU C++ Compiler 就绪。\n期待您的代码运行指令...\n\n💡 提示：如果程序包含 cin/scanf 输入，请先在右侧注入测试数据！</div>
+                        <div class="terminal-stdin-area"><div class="stdin-title">标准输入 (Stdin Data)</div><textarea class="os-stdin-input" spellcheck="false" placeholder="👉 在此填写多行测试输入数据..."></textarea></div>
+                    </div>
+                </div>` : ''}
+                <div class="vscode-status-bar"><div>🔀 main* • LF</div><div style="display:flex;gap:12px;"><span class="ln-col-pointer">Ln 1, Col 1</span><span>UTF-8</span><span>${file.type.toUpperCase()}</span></div></div>
+            `;
+            bodyContainer.appendChild(editorContainer);
+            const textarea = editorContainer.querySelector('.os-textarea');
+            const gutter = editorContainer.querySelector('.code-gutter');
+            const bracketLayer = editorContainer.querySelector('.bracket-highlight-layer');
+            textarea.value = file.content;
+
+            const updateGutter = () => { const totalLines = textarea.value.split('\n').length; const fontSize = parseFloat(window.getComputedStyle(textarea).fontSize) || 14; const lineHeight = fontSize * 1.5; const rowHeight = lineHeight + 'px'; gutter.style.fontSize = fontSize + 'px'; gutter.style.lineHeight = '1.5'; let gutterHTML = ''; for (let i = 1; i <= totalLines; i++) { gutterHTML += `<div style="height:${rowHeight}">${i}</div>`; } gutter.innerHTML = gutterHTML; };
+            const updateBracketHighlight = () => { if (!isCpp) { bracketLayer.innerHTML = ''; return; } const text = textarea.value; const unmatched = findUnmatchedBrackets(text); let hasUnmatched = false; for (let i = 0; i < unmatched.length; i++) { if (unmatched[i]) { hasUnmatched = true; break; } } if (hasUnmatched) { bracketLayer.innerHTML = buildBracketHighlightHTML(text, unmatched); bracketLayer.style.fontSize = window.getComputedStyle(textarea).fontSize; bracketLayer.style.paddingTop = window.getComputedStyle(textarea).paddingTop; bracketLayer.scrollTop = textarea.scrollTop; bracketLayer.scrollLeft = textarea.scrollLeft; } else { bracketLayer.innerHTML = ''; } };
+
+            textarea.addEventListener('input', () => { file.content = textarea.value; saveSystemData(); updateGutter(); updateBracketHighlight(); });
+            textarea.addEventListener('scroll', () => { gutter.scrollTop = textarea.scrollTop; bracketLayer.scrollTop = textarea.scrollTop; bracketLayer.scrollLeft = textarea.scrollLeft; });
+
+            textarea.addEventListener('keydown', function(e) {
+                const start = this.selectionStart; const end = this.selectionEnd; const val = this.value; const charBefore = val.charAt(start - 1); const charAfter = val.charAt(start);
+                if (e.key === 'Tab') { e.preventDefault(); this.value = val.substring(0, start) + "    " + val.substring(end); this.selectionStart = this.selectionEnd = start + 4; file.content = this.value; saveSystemData(); updateGutter(); updateBracketHighlight(); return; }
+                if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'r' || e.key === 'R'))) {
+                    e.preventDefault();
+                    if (isCpp) {
+                        const runBtn = editorContainer.querySelector('.vscode-run-btn');
+                        if (runBtn) runBtn.click();
+                    }
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+                    e.preventDefault();
+                    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+                    const lineEnd = val.indexOf('\n', start);
+                    const currentLine = val.substring(lineStart, lineEnd === -1 ? val.length : lineEnd);
+                    this.value = val.substring(0, lineEnd === -1 ? val.length : lineEnd) + '\n' + currentLine + val.substring(lineEnd === -1 ? val.length : lineEnd);
+                    this.selectionStart = this.selectionEnd = start + currentLine.length + 1;
+                    file.content = this.value;
+                    saveSystemData();
+                    updateGutter();
+                    updateBracketHighlight();
+                    return;
+                }
+                if (e.key === 'Backspace' && isCpp) { const openCloseMap = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'" }; if (openCloseMap[charBefore] === charAfter) { e.preventDefault(); this.value = val.substring(0, start - 1) + val.substring(start + 1); this.selectionStart = this.selectionEnd = start - 1; file.content = this.value; saveSystemData(); updateGutter(); updateBracketHighlight(); return; } }
+                if (e.key === 'Enter') {
+                    e.preventDefault(); const linesBefore = val.substring(0, start).split('\n'); const currentLine = linesBefore[linesBefore.length - 1]; const baseIndentMatch = currentLine.match(/^(\s*)/); const baseIndent = baseIndentMatch ? baseIndentMatch[0] : '';
+                    if (charBefore === '{' && charAfter === '}') { const innerIndent = baseIndent + "    "; this.value = val.substring(0, start) + "\n" + innerIndent + "\n" + baseIndent + val.substring(end); this.selectionStart = this.selectionEnd = start + 1 + innerIndent.length; }
+                    else if (charBefore === '{') { const innerIndent = baseIndent + "    "; this.value = val.substring(0, start) + "\n" + innerIndent + val.substring(end); this.selectionStart = this.selectionEnd = start + 1 + innerIndent.length; }
+                    else if (charAfter === '}') { const dedented = baseIndent.length >= 4 ? baseIndent.substring(0, baseIndent.length - 4) : ''; this.value = val.substring(0, start) + "\n" + dedented + val.substring(end); this.selectionStart = this.selectionEnd = start + 1 + dedented.length; }
+                    else { this.value = val.substring(0, start) + "\n" + baseIndent + val.substring(end); this.selectionStart = this.selectionEnd = start + 1 + baseIndent.length; }
+                    file.content = this.value; saveSystemData(); updateGutter(); updateBracketHighlight(); return;
+                }
+                if (isCpp) {
+                    const openCloseMap = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'" };
+                    const closeChars = new Set([')', ']', '}']);
+                    if (closeChars.has(e.key) && charAfter === e.key) { e.preventDefault(); this.selectionStart = this.selectionEnd = start + 1; return; }
+                    if (e.key === '"' || e.key === "'") {
+                        const quote = e.key; e.preventDefault();
+                        if (charAfter === quote) { this.selectionStart = this.selectionEnd = start + 1; return; }
+                        let count = 0; for (let i = 0; i < start; i++) { if (val[i] === quote && (i === 0 || val[i-1] !== '\\')) count++; }
+                        if (count % 2 === 1) { this.value = val.substring(0, start) + quote + val.substring(end); this.selectionStart = this.selectionEnd = start + 1; }
+                        else { this.value = val.substring(0, start) + quote + quote + val.substring(end); this.selectionStart = this.selectionEnd = start + 1; }
+                        file.content = this.value; saveSystemData(); updateGutter(); updateBracketHighlight(); return;
+                    }
+                    if (openCloseMap[e.key] && e.key !== '"' && e.key !== "'") {
+                        e.preventDefault(); const closeChar = openCloseMap[e.key];
+                        if (charAfter === closeChar) { this.value = val.substring(0, start) + e.key + val.substring(end); this.selectionStart = this.selectionEnd = start + 1; }
+                        else { this.value = val.substring(0, start) + e.key + closeChar + val.substring(end); this.selectionStart = this.selectionEnd = start + 1; }
+                        file.content = this.value; saveSystemData(); updateGutter(); updateBracketHighlight(); return;
+                    }
+                }
+            });
+
+            if (isCpp) {
+                const termBody = editorContainer.querySelector('.terminal-body');
+                const stdinInput = editorContainer.querySelector('.os-stdin-input');
+                editorContainer.querySelector('.vscode-run-btn').onclick = () => {
+                    termBody.innerHTML = `[编译任务] 正在连接高可用备用节点...\n`;
+                    if (typeof GM_xmlhttpRequest === 'undefined') { termBody.innerHTML = `<span style="color:#ff5f56;">[致命错误] 未检测到跨域通信组件！</span>`; return; }
+                    GM_xmlhttpRequest({
+                        method: "POST", url: "https://ce.judge0.com/submissions?wait=true",
+                        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                        data: JSON.stringify({ source_code: textarea.value, language_id: 54, stdin: stdinInput.value }),
+                        onload: function(response) { try { const res = JSON.parse(response.responseText); termBody.innerHTML = `[计算集群] 代码安全沙盒执行完毕：\n------------------------------------\n`; if (res.compile_output) termBody.innerHTML += `<span style="color: #ff5f56; font-weight:bold;">[GCC 语法错误]\n${res.compile_output}</span>\n`; if (res.stdout) termBody.innerHTML += res.stdout; if (res.stderr) termBody.innerHTML += `<span style="color: #ffaa00;">[运行时断言/异常]\n${res.stderr}</span>\n`; if (!res.stdout && !res.stderr && !res.compile_output) termBody.innerHTML += `(程序安全退出，回执状态: ${res.status ? res.status.description : 'Success'})`; } catch(e) { termBody.innerHTML = `<span style="color:#ff5f56;">[解析失败] ${e.message}</span>\n${response.responseText}`; } },
+                        onerror: function() { termBody.innerHTML = `<span style="color:#ff5f56;">[连接失败]</span>`; }
+                    });
+                };
+                const snippetBtn = editorContainer.querySelector('.vscode-snippet-btn');
+                const snippetDropdown = document.createElement('div'); snippetDropdown.className = 'snippet-dropdown';
+                let snippetHTML = ''; CPP_SNIPPETS.forEach((s, idx) => { snippetHTML += `<div class="snippet-item" data-snippet-idx="${idx}"><span class="snippet-name">${s.name}</span><span class="snippet-prefix">${s.prefix}</span></div>`; });
+                snippetDropdown.innerHTML = snippetHTML;
+                const snippetSearch = document.createElement('input');
+                snippetSearch.type = 'text';
+                snippetSearch.placeholder = '搜索片段...';
+                snippetSearch.style.cssText = 'width:100%;padding:6px 8px;border:none;border-bottom:1px solid #444;background:#1e1e1e;color:#ccc;font-size:12px;outline:none;box-sizing:border-box;';
+                snippetDropdown.insertBefore(snippetSearch, snippetDropdown.firstChild);
+                snippetSearch.addEventListener('input', function() {
+                    const keyword = this.value.toLowerCase();
+                    snippetDropdown.querySelectorAll('.snippet-item').forEach(function(item) {
+                        const name = item.querySelector('.snippet-name').textContent.toLowerCase();
+                        const prefix = item.querySelector('.snippet-prefix').textContent.toLowerCase();
+                        item.style.display = (name.includes(keyword) || prefix.includes(keyword)) ? 'flex' : 'none';
+                    });
+                });
+                snippetBtn.addEventListener('click', function() { setTimeout(function() { snippetSearch.focus(); }, 50); });
+                snippetBtn.parentElement.appendChild(snippetDropdown);
+                snippetBtn.addEventListener('click', (e) => { e.stopPropagation(); snippetDropdown.classList.toggle('show'); });
+                snippetDropdown.querySelectorAll('.snippet-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation(); const idx = parseInt(item.getAttribute('data-snippet-idx')); const snippet = CPP_SNIPPETS[idx]; if (!snippet) return;
+                        let body = snippet.body, rawCursorPos = -1, processed = '', i = 0;
+                        while (i < body.length) { if (body[i] === '$') { if (body[i+1] === '0') { rawCursorPos = processed.length; i += 2; continue; } else if (body[i+1] === '{') { const closeIdx = body.indexOf('}', i); if (closeIdx >= 0) { const colonIdx = body.indexOf(':', i); if (colonIdx >= 0 && colonIdx < closeIdx) processed += body.substring(colonIdx+1, closeIdx); i = closeIdx+1; continue; } } else if (/\d/.test(body[i+1])) { i += 2; continue; } } processed += body[i]; i++; }
+                        const insertText = processed; const cursorOffset = rawCursorPos >= 0 ? rawCursorPos : insertText.length;
+                        const start = textarea.selectionStart; const val = textarea.value;
+                        const lineStart = val.lastIndexOf('\n', start - 1) + 1; const needsNewline = val.substring(lineStart, start).trim().length > 0;
+                        const finalText = needsNewline ? '\n' + insertText : insertText; const finalCursorOffset = (needsNewline ? 1 : 0) + cursorOffset;
+                        textarea.value = val.substring(0, start) + finalText + val.substring(textarea.selectionEnd);
+                        textarea.selectionStart = textarea.selectionEnd = start + finalCursorOffset; textarea.focus();
+                        file.content = textarea.value; saveSystemData(); updateGutter(); updateBracketHighlight(); snippetDropdown.classList.remove('show');
+                    });
+                });
+                document.addEventListener('click', (e) => { if (!snippetBtn.contains(e.target) && !snippetDropdown.contains(e.target)) snippetDropdown.classList.remove('show'); });
+            }
+            const lnColPointer = editorContainer.querySelector('.ln-col-pointer');
+            const trackLnCol = () => { const textBeforeCursor = textarea.value.substring(0, textarea.selectionStart); const lines = textBeforeCursor.split('\n'); lnColPointer.innerText = `Ln ${lines.length}, Col ${lines[lines.length - 1].length + 1}`; };
+            textarea.addEventListener('keyup', trackLnCol); textarea.addEventListener('click', trackLnCol);
+            updateGutter(); updateBracketHighlight(); bindCtrlWheelZoom(textarea, gutter, updateGutter);
+        }
+        else if (file.type === 'docx') {
+            const wordUI = document.createElement('div'); wordUI.className = 'word-container';
+            wordUI.innerHTML = `<div class="word-ribbon"><span style="font-weight:bold; cursor:pointer;" onclick="document.execCommand('bold')">B 加粗</span><span style="font-style:italic; cursor:pointer;" onclick="document.execCommand('italic')">I 斜体</span><span style="text-decoration:underline; cursor:pointer;" onclick="document.execCommand('underline')">U 下划线</span></div><div class="word-page-viewport"><div class="word-page" contenteditable="true">${file.content}</div></div>`;
+            bodyContainer.appendChild(wordUI);
+            const pageEl = wordUI.querySelector('.word-page');
+            pageEl.addEventListener('input', () => { file.content = pageEl.innerHTML; saveSystemData(); });
+            bindCtrlWheelZoom(pageEl);
+        }
+        else if (file.type === 'xlsx') {
+            const excelUI = document.createElement('div'); excelUI.className = 'excel-container';
+            let matrix = Array.isArray(file.content) ? file.content : [["","",""]];
+            let tableHTML = `<table class="excel-table"><tr><th style="width:40px;"></th><th>A</th><th>B</th><th>C</th><th>D</th></tr>`;
+            for (let r = 0; r < 20; r++) { tableHTML += `<tr><th style="font-weight:bold;">${r+1}</th>`; for (let c = 0; c < 4; c++) { let val = (matrix[r] && matrix[r][c]) ? matrix[r][c] : ""; tableHTML += `<td contenteditable="true" data-row="${r}" data-col="${c}">${val}</td>`; } tableHTML += `</tr>`; }
+            tableHTML += `</table>`;
+            excelUI.innerHTML = `<div class="excel-ribbon"><span style="cursor:pointer;padding:0 8px;" id="excel-add-row">+行</span><span style="cursor:pointer;padding:0 8px;" id="excel-add-col">+列</span><span style="cursor:pointer;padding:0 8px;" id="excel-del-row">-行</span><span style="cursor:pointer;padding:0 8px;" id="excel-del-col">-列</span></div><div class="excel-formula-bar"><span style="font-weight:bold;color:#107c41;">fx</span><input type="text" class="excel-formula-input" id="f-bar-input" placeholder="单元格编辑..."></div><div class="excel-grid-viewport">${tableHTML}</div>`;
+            bodyContainer.appendChild(excelUI);
+            const gridViewport = excelUI.querySelector('.excel-grid-viewport'); const fInput = excelUI.querySelector('#f-bar-input'); let activeCell = null;
+            gridViewport.addEventListener('focusin', (e) => { if (e.target.tagName === 'TD') { if (activeCell) activeCell.classList.remove('selected-cell'); activeCell = e.target; activeCell.classList.add('selected-cell'); fInput.value = activeCell.innerText; } });
+            gridViewport.addEventListener('input', (e) => { if (e.target.tagName === 'TD') { const r = parseInt(e.target.getAttribute('data-row')); const c = parseInt(e.target.getAttribute('data-col')); fInput.value = e.target.innerText; if (!matrix[r]) matrix[r] = []; matrix[r][c] = e.target.innerText; file.content = matrix; saveSystemData(); } });
+            fInput.addEventListener('input', () => { if (activeCell) { activeCell.innerText = fInput.value; const r = parseInt(activeCell.getAttribute('data-row')); const c = parseInt(activeCell.getAttribute('data-col')); if (!matrix[r]) matrix[r] = []; matrix[r][c] = fInput.value; file.content = matrix; saveSystemData(); } });
+            excelUI.querySelector('#excel-add-row').addEventListener('click', function() {
+    const rowCount = gridViewport.querySelectorAll('tr').length - 1;
+    const colCount = gridViewport.querySelector('tr:first-child').querySelectorAll('th').length - 1;
+    if (!matrix[rowCount]) matrix[rowCount] = [];
+    for (let c = 0; c < colCount; c++) matrix[rowCount][c] = matrix[rowCount][c] || '';
+    file.content = matrix; saveSystemData();
+    const lastRow = gridViewport.querySelector('table').insertRow(-1);
+    lastRow.innerHTML = '<th style="font-weight:bold;">' + (rowCount + 1) + '</th>';
+    for (let c = 0; c < colCount; c++) {
+        const td = lastRow.insertCell(-1);
+        td.contentEditable = 'true'; td.setAttribute('data-row', rowCount); td.setAttribute('data-col', c);
+        td.textContent = matrix[rowCount][c] || '';
+    }
+});
+excelUI.querySelector('#excel-add-col').addEventListener('click', function() {
+    const headerRow = gridViewport.querySelector('table tr:first-child');
+    const colCount = headerRow.querySelectorAll('th').length;
+    const th = document.createElement('th'); th.textContent = String.fromCharCode(64 + colCount);
+    headerRow.appendChild(th);
+    gridViewport.querySelectorAll('table tr').forEach(function(tr, idx) {
+        if (idx === 0) return;
+        const r = idx - 1; const td = document.createElement('td');
+        td.contentEditable = 'true'; td.setAttribute('data-row', r); td.setAttribute('data-col', colCount - 1);
+        td.textContent = ''; if (!matrix[r]) matrix[r] = []; matrix[r][colCount - 1] = '';
+        tr.appendChild(td);
+    });
+    file.content = matrix; saveSystemData();
+});
+            bindCtrlWheelZoom(gridViewport);
+        }
+
+        win.querySelector('.win-btn-save').onclick = (e) => {
+            e.stopPropagation(); let blob, downloadName = file.name;
+            if (file.type === 'txt' || file.type === 'cpp') { blob = new Blob([file.content], { type: "text/plain;charset=utf-8" }); }
+            else if (file.type === 'md') { blob = new Blob([file.content], { type: "text/markdown;charset=utf-8" }); }
+            else if (file.type === 'docx') { const htmlContent = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><style>body{font-family:'宋体',SimSun,serif;font-size:14px;line-height:1.8;}</style></head><body>${file.content}</body></html>`; blob = new Blob([htmlContent], { type: "application/msword;charset=utf-8" }); downloadName = file.name.replace('.docx', '.doc'); }
+            else if (file.type === 'xlsx') { let matrix = Array.isArray(file.content) ? file.content : []; let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Sheet1</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head><body><table border="1">`; matrix.forEach(row => { html += '<tr>'; (row || []).forEach(cell => { html += `<td style="mso-number-format:\\@;">${cell || ''}</td>`; }); html += '</tr>'; }); html += '</table></body></html>'; blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" }); downloadName = file.name.replace('.xlsx', '.xls'); }
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = downloadName; link.click();
+        };
+        win.addEventListener('mousedown', () => { win.style.zIndex = ++zIndexCounter; }, true);
+        const extraData = { id: file.id, type: 'file' };
+        win.querySelector('.win-btn-close').onclick = () => { win.remove(); removeWindowState(file.id); const item = taskbarMinList.querySelector(`[data-win-id="${openWinId}"]`); if (item) item.remove(); };
+        bindWindowDragAndResize(win, win.querySelector('.os-window-header'), win.querySelector('.os-window-resize-handle'), extraData);
+        bindWindowControls(win, file.name, extraData);
+        if (!restoreState) saveWindowState(openWinId, extraData);
+    }
+
+    // --- 7. 控制面板 ---
+    function openSettingsPanel() {
+    if (shadow.getElementById('win-runtime-sys-settings')) { shadow.getElementById('win-runtime-sys-settings').style.zIndex = ++zIndexCounter; return; }
+    const win = document.createElement('div');
+    win.className = 'os-window'; win.id = 'win-runtime-sys-settings'; win.style.zIndex = ++zIndexCounter;
+    win.style.top = '140px'; win.style.left = '380px'; win.style.width = '520px'; win.style.height = '520px';
+    let themeSwatchesHTML = '';
+    const themeColors = { default: '#0078d4', blue: '#1565c0', purple: '#7b1fa2', green: '#2e7d32', amber: '#e65100', red: '#c62828', light: '#f0f0f0' };
+    Object.keys(THEMES).forEach(key => { const isActive = OS_DATA.settings.theme === key ? 'active' : ''; themeSwatchesHTML += `<div class="theme-swatch ${isActive}" data-theme="${key}" style="background: ${themeColors[key]};" title="${THEMES[key].label}"></div>`; });
+    win.innerHTML = `
+        <div class="os-window-header"><span>⚙️ 系统控制中心</span><div class="window-controls-group"><div class="win-ctrl-btn win-btn-min" title="最小化">—</div><div class="win-ctrl-btn win-btn-max" title="最大化/还原">□</div><div class="win-ctrl-btn win-btn-close" title="关闭">×</div></div></div>
+        <div class="os-window-body"><div class="settings-body">
+            <div style="color:#4ec9b0; font-weight:bold; border-bottom: 1px solid #444; padding-bottom: 5px;">🎨 外观设置</div>
+            <div class="settings-row"><span>系统色调:</span><div class="theme-selector">${themeSwatchesHTML}</div></div>
+            <div class="settings-row"><span>自定义颜色:</span><input type="color" id="set-custom-color" style="width:36px;height:28px;padding:0;border:2px solid var(--input-border);border-radius:4px;cursor:pointer;background:transparent;" value="${OS_DATA.settings.customAccentColor || '#0078d4'}"><button class="model-btn model-btn-add" id="btn-apply-custom-color" style="margin-left:6px;">应用</button><button class="model-btn model-btn-del" id="btn-reset-theme" style="margin-left:4px;">恢复默认</button></div>
+            <div class="settings-row"><span>网页壁纸模糊度:</span><input type="range" class="settings-slider" id="set-blur" min="0" max="25" value="${OS_DATA.settings.blur}"><span id="txt-blur" style="width:40px;">${OS_DATA.settings.blur}px</span></div>
+            <div class="settings-row"><span>原网页背景亮度:</span><input type="range" class="settings-slider" id="set-bright" min="0" max="95" value="${OS_DATA.settings.brightness}"><span id="txt-bright" style="width:40px;">${100 - OS_DATA.settings.brightness}%</span></div>
+            <div style="color:#ffab40; font-weight:bold; border-bottom: 1px solid #444; padding-bottom: 5px; margin-top:10px;">🪟 窗口管理</div>
+            <div class="settings-row"><span>记忆窗口 (刷新后恢复):</span><div class="toggle-switch ${OS_DATA.settings.rememberWindows ? 'active' : ''}" id="toggle-remember-windows"></div></div>
+            <div style="font-size:11px; color:#888; margin-top:-8px;">开启后，关闭窗口/刷新页面将恢复之前打开的窗口及其位置和大小</div>
+            <div class="settings-row" style="margin-top: 8px;"><span>刷新自动恢复桌面:</span><div class="toggle-switch ${OS_DATA.settings.autoRestoreDesktop ? 'active' : ''}" id="toggle-auto-restore-desktop"></div></div>
+            <div style="font-size:11px; color:#888; margin-top:-8px;">开启后，刷新页面时自动恢复桌面模式；关闭后，刷新页面将回到普通网页</div>
+            <div style="color:#da70d6; font-weight:bold; border-bottom: 1px solid #444; padding-bottom: 5px; margin-top:10px;">🤖 AI 终端配置 (apilio.ai)</div>
+            <div class="settings-row"><span style="width:70px;">API Key:</span><input type="password" class="settings-input" id="set-apikey" placeholder="sk-..." value="${OS_DATA.settings.apiKey}"></div>
+            <div class="settings-row" style="margin-top: 5px;"><span style="width:70px;">默认模型:</span><select class="settings-input" id="set-model-select" style="padding: 2px 8px;"></select><button class="model-btn model-btn-add" id="btn-add-model">＋</button><button class="model-btn model-btn-del" id="btn-del-model">－</button></div>
+            <div style="color:#da70d6; font-weight:bold; border-bottom: 1px solid #444; padding-bottom: 5px; margin-top:10px;">🔒 密码设置</div>
+            <div class="settings-row"><span>修改密码:</span><button class="model-btn model-btn-add" id="btn-change-pwd">修改</button></div>
+            <div style="color:#4ec9b0; font-weight:bold; border-bottom: 1px solid #444; padding-bottom: 5px; margin-top:10px;">📦 数据管理</div>
+            <div class="settings-row"><span>一键下载全部文件:</span><button class="model-btn model-btn-add" id="btn-download-all">📦 下载全部</button></div>
+            <div style="font-size:11px; color:#888; margin-top:-8px;">将所有文件打包为压缩包下载（需要浏览器支持）</div>
+            </div></div>
+        </div></div>
+        <div class="os-window-resize-handle"></div>
+    `;
+    desktop.appendChild(win);
+    const sBlur = win.querySelector('#set-blur'); const sBright = win.querySelector('#set-bright'); const sApi = win.querySelector('#set-apikey'); const sModelSelect = win.querySelector('#set-model-select');
+    const renderModelOptions = () => { sModelSelect.innerHTML = ''; OS_DATA.settings.modelList.forEach(m => { const opt = document.createElement('option'); opt.value = m; opt.innerText = m; if (m === OS_DATA.settings.activeModel) opt.selected = true; sModelSelect.appendChild(opt); }); };
+    renderModelOptions();
+    win.querySelectorAll('.theme-swatch').forEach(swatch => { swatch.addEventListener('click', () => { OS_DATA.settings.theme = swatch.getAttribute('data-theme'); OS_DATA.settings.customAccentColor = ''; saveSystemData(); applyTheme(); win.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active')); swatch.classList.add('active'); }); });
+// 自定义颜色
+const customColorInput = win.querySelector('#set-custom-color');
+win.querySelector('#btn-apply-custom-color').onclick = () => {
+    const color = customColorInput.value;
+    OS_DATA.settings.theme = 'custom';
+    OS_DATA.settings.customAccentColor = color;
+    saveSystemData();
+    applyTheme();
+    win.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+};
+// 恢复默认设置
+win.querySelector('#btn-reset-theme').onclick = () => {
+    OS_DATA.settings.theme = 'default';
+    OS_DATA.settings.customAccentColor = '';
+    saveSystemData();
+    applyTheme();
+    customColorInput.value = '#0078d4';
+    win.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+    win.querySelector('[data-theme="default"]').classList.add('active');
+};
+    const toggleRemember = win.querySelector('#toggle-remember-windows');
+    toggleRemember.addEventListener('click', () => { OS_DATA.settings.rememberWindows = !OS_DATA.settings.rememberWindows; toggleRemember.classList.toggle('active', OS_DATA.settings.rememberWindows); saveSystemDataNow(); if (!OS_DATA.settings.rememberWindows) { OS_DATA.openWindows = []; saveSystemDataNow(); } });
+    const toggleAutoRestore = win.querySelector('#toggle-auto-restore-desktop');
+    toggleAutoRestore.addEventListener('click', () => { OS_DATA.settings.autoRestoreDesktop = !OS_DATA.settings.autoRestoreDesktop; toggleAutoRestore.classList.toggle('active', OS_DATA.settings.autoRestoreDesktop); saveSystemDataNow(); });
+    sBlur.oninput = (e) => { OS_DATA.settings.blur = e.target.value; win.querySelector('#txt-blur').innerText = `${e.target.value}px`; wallpaperBlur.style.backdropFilter = `blur(${OS_DATA.settings.blur}px)`; saveSystemData(); };
+    sBright.oninput = (e) => { OS_DATA.settings.brightness = e.target.value; win.querySelector('#txt-bright').innerText = `${100 - e.target.value}%`; wallpaperBlur.style.background = `rgba(0, 0, 0, ${OS_DATA.settings.brightness / 100})`; saveSystemData(); };
+    sApi.oninput = (e) => { OS_DATA.settings.apiKey = e.target.value; saveSystemData(); };
+    sModelSelect.onchange = (e) => { OS_DATA.settings.activeModel = e.target.value; saveSystemData(); const chatHeader = shadow.querySelector('#win-ai-chat-terminal .os-window-header span'); if (chatHeader) chatHeader.innerText = `🤖 AI 智能终端 (${OS_DATA.settings.activeModel})`; };
+    win.querySelector('#btn-change-pwd').onclick = () => {
+    let o = prompt('请输入旧密码');
+    if (o !== _pwd) { alert('旧密码错误！'); return; }
+    let n = prompt('请输入新密码（留空则免密登录，至少4位）');
+    if (n === null) return;
+    if (n.length === 0 || n.length >= 4) {
+        _pwd = n;
+        localStorage.setItem('OS_PWD', n);
+        alert(n.length === 0 ? '已设置为免密登录！' : '密码修改成功！');
+    } else {
+        alert('密码至少4位！');
+    }
+    };
+    win.querySelector('#btn-download-all').onclick = () => {
+        const files = OS_DATA.files.filter(f => f.type !== 'folder');
+        if (files.length === 0) { alert('没有文件可下载！'); return; }
+        const zip = new JSZip();
+        files.forEach(file => {
+            let content = file.content;
+            if (file.type === 'xlsx') {
+                let matrix = Array.isArray(content) ? content : [];
+                let csv = matrix.map(row => (row || []).join(',')).join('\n');
+                zip.file(file.name.replace('.xlsx', '.csv'), csv);
+            } else if (file.type === 'docx') {
+                zip.file(file.name.replace('.docx', '.html'), content);
+            } else {
+                zip.file(file.name, content);
+            }
+        });
+        zip.generateAsync({ type: 'blob' }).then(function(blob) {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'WebOS_AllFiles_' + new Date().toISOString().slice(0,10) + '.zip';
+            link.click();
+            alert('✅ 全部文件已打包下载！');
+        });
+    };
+
+    win.querySelector('#btn-add-model').onclick = () => { const newModel = prompt('请输入新模型名称:'); if (newModel && newModel.trim() !== '') { const cleanModel = newModel.trim(); if (!OS_DATA.settings.modelList.includes(cleanModel)) OS_DATA.settings.modelList.push(cleanModel); OS_DATA.settings.activeModel = cleanModel; saveSystemData(); renderModelOptions(); } };
+    win.querySelector('#btn-del-model').onclick = () => { if (OS_DATA.settings.modelList.length <= 1) { alert('⚠️ 至少需要保留一个模型！'); return; } if (confirm(`确定要移除模型 [${OS_DATA.settings.activeModel}] 吗？`)) { OS_DATA.settings.modelList = OS_DATA.settings.modelList.filter(m => m !== OS_DATA.settings.activeModel); OS_DATA.settings.activeModel = OS_DATA.settings.modelList[0]; saveSystemData(); renderModelOptions(); } };
+    win.querySelector('.win-btn-close').onclick = () => { OS_DATA.settingsOpen = false; saveSystemDataNow(); win.remove(); };
+    OS_DATA.settingsOpen = true;
+    saveSystemDataNow();
+    bindWindowDragAndResize(win, win.querySelector('.os-window-header'), win.querySelector('.os-window-resize-handle'), null);
+    bindWindowControls(win, '⚙️ 设置', null);
+}
+    function bindCtrlWheelZoom(element, gutter, updateGutter) {
+        element.addEventListener('wheel', function(e) { if (e.ctrlKey) { e.preventDefault(); let size = parseFloat(window.getComputedStyle(this).fontSize) || 14; size = e.deltaY < 0 ? Math.min(45, size + 1) : Math.max(10, size - 1); this.style.fontSize = size + 'px'; if (gutter && updateGutter) updateGutter(); } }, { passive: false });
+    }
+
+    renderSidebarFiles();
+})();
