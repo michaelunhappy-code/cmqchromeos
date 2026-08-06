@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chrome OS (apilio) - Web OS 脚本发布页</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            line-height: 1.6;
+        }
+        .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+        
+        /* Header */
+        .hero {
+            text-align: center;
+            padding: 60px 0 40px;
+            border-bottom: 1px solid #30363d;
+            margin-bottom: 40px;
+        }
+        .hero h1 {
+            font-size: 2.5em;
+            background: linear-gradient(135deg, #58a6ff, #a371f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 12px;
+        }
+        .hero .subtitle {
+            color: #8b949e;
+            font-size: 1.1em;
+        }
+        .hero .badge {
+            display: inline-block;
+            margin-top: 16px;
+            padding: 6px 14px;
+            background: #238636;
+            color: white;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        /* Cards */
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 28px;
+            margin-bottom: 24px;
+            transition: border-color 0.2s;
+        }
+        .card:hover { border-color: #484f58; }
+        .card h2 {
+            color: #f0f6fc;
+            margin-bottom: 16px;
+            font-size: 1.3em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        /* Features */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .feature-item {
+            background: #0d1117;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #21262d;
+        }
+        .feature-item h4 { color: #58a6ff; margin-bottom: 6px; font-size: 0.95em; }
+        .feature-item p { color: #8b949e; font-size: 0.88em; line-height: 1.5; }
+        
+        /* Version Lists */
+        .version-section { margin-bottom: 16px; }
+        .version-section h3 {
+            color: #f0883e;
+            font-size: 1em;
+            margin-bottom: 12px;
+            padding-left: 8px;
+            border-left: 3px solid #f0883e;
+        }
+        .version-list { display: flex; flex-direction: column; gap: 10px; }
+        .version-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #0d1117;
+            padding: 14px 18px;
+            border-radius: 8px;
+            border: 1px solid #21262d;
+            transition: all 0.2s;
+        }
+        .version-item:hover {
+            border-color: #58a6ff;
+            transform: translateX(4px);
+        }
+        .version-info { display: flex; align-items: center; gap: 12px; }
+        .version-tag {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75em;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .tag-insider { background: #f0883e20; color: #f0883e; border: 1px solid #f0883e40; }
+        .tag-stable { background: #23863620; color: #3fb950; border: 1px solid #23863640; }
+        .version-name { font-weight: 600; color: #f0f6fc; }
+        .version-meta { color: #8b949e; font-size: 0.85em; margin-top: 2px; }
+        
+        .btn-group { display: flex; gap: 8px; }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 0.85em;
+            font-weight: 600;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-primary {
+            background: #1f6feb;
+            color: white;
+        }
+        .btn-primary:hover { background: #388bfd; }
+        .btn-secondary {
+            background: #21262d;
+            color: #c9d1d9;
+            border: 1px solid #30363d;
+        }
+        .btn-secondary:hover { background: #30363d; }
+        
+        /* Install Steps */
+        .steps { counter-reset: step; }
+        .step {
+            position: relative;
+            padding-left: 48px;
+            margin-bottom: 20px;
+        }
+        .step::before {
+            counter-increment: step;
+            content: counter(step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 32px;
+            height: 32px;
+            background: #1f6feb;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.9em;
+        }
+        .step h4 { color: #f0f6fc; margin-bottom: 6px; }
+        .step p { color: #8b949e; font-size: 0.9em; }
+        .code-block {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-top: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.85em;
+            color: #a5d6ff;
+            overflow-x: auto;
+        }
+        
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 40px 0;
+            color: #484f58;
+            font-size: 0.85em;
+            border-top: 1px solid #30363d;
+            margin-top: 40px;
+        }
+        
+        /* Responsive */
+        @media (max-width: 600px) {
+            .hero h1 { font-size: 1.8em; }
+            .version-item { flex-direction: column; align-items: flex-start; gap: 12px; }
+            .btn-group { width: 100%; }
+            .btn { flex: 1; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Hero -->
+        <div class="hero">
+            <h1>🖥️ Chrome OS (apilio)</h1>
+            <p class="subtitle">网页模拟桌面系统 (Web OS) - Tampermonkey 用户脚本</p>
+            <span class="badge">最新版本: 4.7 Insider</span>
+        </div>
+
+        <!-- Intro -->
+        <div class="card">
+            <h2>📖 项目介绍</h2>
+            <p style="color:#8b949e; margin-bottom:16px;">
+                一个功能强大的浏览器端虚拟桌面系统脚本。安装后，在任何网页右下角会出现"进入桌面模式"按钮，
+                点击即可进入一个完整的模拟桌面环境，支持文件管理、代码编辑、AI对话、Office文档处理等功能。
+            </p>
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <h4>🗂️ 文件管理</h4>
+                    <p>支持 txt, cpp, md, docx, xlsx 等格式，可新建、删除、重命名、拖拽上传</p>
+                </div>
+                <div class="feature-item">
+                    <h4>💻 代码编辑</h4>
+                    <p>VS Code 风格编辑器，支持 C++ 编译运行、代码片段、括号补全</p>
+                </div>
+                <div class="feature-item">
+                    <h4>🤖 AI 对话</h4>
+                    <p>内置 AI 终端，支持 Markdown 渲染、上下文记忆、多模型切换</p>
+                </div>
+                <div class="feature-item">
+                    <h4>🎨 个性化</h4>
+                    <p>7 种色调主题、浅色/深色模式、窗口记忆、锁屏密码保护</p>
+                </div>
+                <div class="feature-item">
+                    <h4>📦 Office 支持</h4>
+                    <p>原生 Word/Excel 格式导出，非纯文本，真实格式文件</p>
+                </div>
+                <div class="feature-item">
+                    <h4>⚡ 快捷键</h4>
+                    <p>全功能快捷键支持，Ctrl+S 保存、Ctrl+Enter 换行、窗口管理等</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Versions -->
+        <div class="card">
+            <h2>📦 版本下载</h2>
+            
+            <div class="version-section">
+                <h3>🔥 Insider 预览版（4.0 - 4.7）</h3>
+                <div class="version-list" id="insider-list">
+                    <!-- Generated by JS -->
+                </div>
+            </div>
+            
+            <div class="version-section" style="margin-top: 24px;">
+                <h3>✅ 稳定版</h3>
+                <div class="version-list" id="stable-list">
+                    <!-- Generated by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Install Guide -->
+        <div class="card">
+            <h2>🚀 安装步骤</h2>
+            <div class="steps">
+                <div class="step">
+                    <h4>安装 Tampermonkey 扩展</h4>
+                    <p>在 Chrome / Edge / Firefox 中安装 Tampermonkey（油猴）扩展</p>
+                </div>
+                <div class="step">
+                    <h4>新建脚本</h4>
+                    <p>点击 Tampermonkey 图标 → "管理面板" → 左上角"+"号新建脚本</p>
+                </div>
+                <div class="step">
+                    <h4>粘贴脚本内容</h4>
+                    <p>点击上方对应版本的"复制链接"按钮，在浏览器地址栏打开，全选复制脚本代码，粘贴到新建脚本中</p>
+                </div>
+                <div class="step">
+                    <h4>修改 API（可选）</h4>
+                    <p>如需使用 AI 功能，将脚本中的 <code>api.apilio.ai</code> 替换为你自己的 API 地址</p>
+                </div>
+                <div class="step">
+                    <h4>保存并运行</h4>
+                    <p>按 Ctrl+S 保存脚本，刷新任意网页，右下角出现"进入桌面模式"即表示安装成功</p>
+                </div>
+            </div>
+        </div>
+
+    <script>
+        // 配置：修改这里即可添加新版本
+        const CONFIG = {
+            owner: 'michaelunhappy-code',      // ← 改成你的 GitHub 用户名
+            repo: 'michaelunhappy-code.github.io',      // ← 改成你的仓库名
+            branch: 'main',             // ← 分支名，一般是 main
+            insiderVersions: ['4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7'],
+            stableVersions: ['3.0']
+        };
+
+        // 生成 jsDelivr CDN 链接（国内访问快，且支持直链下载）
+        function getCDNUrl(path) {
+            return `https://cdn.jsdelivr.net/gh/${CONFIG.owner}/${CONFIG.repo}@${CONFIG.branch}/${encodeURIComponent(path)}`;
+        }
+        
+        // 生成 GitHub Raw 链接（备用）
+        function getRawUrl(path) {
+            return `https://raw.githubusercontent.com/${CONFIG.owner}/${CONFIG.repo}/${CONFIG.branch}/${encodeURIComponent(path)}`;
+        }
+
+        // 渲染版本列表
+        function renderVersions() {
+            const insiderList = document.getElementById('insider-list');
+            const stableList = document.getElementById('stable-list');
+
+            // Insider 版本（4.7 标记为最新）
+            CONFIG.insiderVersions.forEach(ver => {
+                const isLatest = ver === '4.7';
+                const fileName = `Chrome OS(apilio) ${ver} insider.js`;
+                const path = `versions/insider/${fileName}`;
+                
+                const item = document.createElement('div');
+                item.className = 'version-item';
+                item.innerHTML = `
+                    <div class="version-info">
+                        <span class="version-tag tag-insider">Insider</span>
+                        <div>
+                            <div class="version-name">${fileName} ${isLatest ? '<span style="color:#f0883e;font-size:0.85em;">👈 当前最新</span>' : ''}</div>
+                            <div class="version-meta">更新于 2026年 | 适用于 Tampermonkey</div>
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="copyLink('${getCDNUrl(path)}')">📋 复制链接</button>
+                        <a href="${getCDNUrl(path)}" class="btn btn-primary" target="_blank" download>⬇️ 下载</a>
+                    </div>
+                `;
+                insiderList.appendChild(item);
+            });
+
+            // 稳定版
+            CONFIG.stableVersions.forEach(ver => {
+                const fileName = `Chrome OS(apilio) ${ver}.js`;
+                const path = `versions/stable/${fileName}`;
+                
+                const item = document.createElement('div');
+                item.className = 'version-item';
+                item.innerHTML = `
+                    <div class="version-info">
+                        <span class="version-tag tag-stable">Stable</span>
+                        <div>
+                            <div class="version-name">${fileName}</div>
+                            <div class="version-meta">长期支持版本 | 稳定性优先</div>
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="copyLink('${getCDNUrl(path)}')">📋 复制链接</button>
+                        <a href="${getCDNUrl(path)}" class="btn btn-primary" target="_blank" download>⬇️ 下载</a>
+                    </div>
+                `;
+                stableList.appendChild(item);
+            });
+        }
+
+        // 复制链接到剪贴板
+        async function copyLink(url) {
+            try {
+                await navigator.clipboard.writeText(url);
+                alert('✅ 链接已复制到剪贴板！\n\n' + url);
+            } catch (err) {
+                // 降级方案
+                const input = document.createElement('input');
+                input.value = url;
+                document.body.appendChild(input);
+                input.select();
+                document.execCommand('copy');
+                document.body.removeChild(input);
+                alert('✅ 链接已复制到剪贴板！');
+            }
+        }
+
+        // 初始化
+        renderVersions();
+    </script>
+</body>
+</html>
