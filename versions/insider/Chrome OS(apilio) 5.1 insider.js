@@ -2018,6 +2018,7 @@ function getTheme() {
         if (keyword === 'cmt') { createNewFile('cmt'); searchBox.value = ''; shadow.querySelectorAll('.file-node').forEach(n => n.style.display = 'flex'); return; }
         if (keyword === '五子棋' || keyword === 'goban') { openGobanGame(); searchBox.value = '';shadow.querySelectorAll('.file-node').forEach(n => n.style.display = 'flex'); return; }
         if (keyword === '象棋' || keyword === 'xiangqi') { openXiangqiGame(); searchBox.value = '';shadow.querySelectorAll('.file-node').forEach(n => n.style.display = 'flex'); return; }
+        if (keyword === '斗地主' || keyword === 'doudizhu') { openDouDiZhuGame(); searchBox.value = '';shadow.querySelectorAll('.file-node').forEach(n => n.style.display = 'flex'); return; }
         if (keyword === '画板' || keyword === 'draw') {
             const drawFile = OS_DATA.files.find(f => f.type === 'draw');
             if (drawFile) openAppWindow(drawFile.id);
@@ -9911,6 +9912,783 @@ OS_DATA.settingsOpen = true;
     bindWindowControls(w, '♟ 五子棋', null, null);
     osBringToFront(w);
 }
+    function openDouDiZhuGame() {
+    var winId = 'win-game-doudizhu';
+    if (shadow.getElementById(winId)) {
+        var w = shadow.getElementById(winId);
+        if (w.classList.contains('minimized')) {
+            w.classList.remove('minimized');
+            w.style.display = 'flex';
+            var item = taskbarMinList.querySelector('[data-win-id="'+winId+'"]');
+            if (item) item.remove();
+        }
+        w.style.zIndex = ++zIndexCounter;
+        w.focus();
+        return;
+    }
+    var win = document.createElement('div');
+    win.className = 'os-window';
+    win.id = winId;
+    win.setAttribute('tabindex', '-1');
+    win.style.zIndex = ++zIndexCounter;
+    win.style.width = '900px';
+    win.style.height = '700px';
+    win.style.top = '40px';
+    win.style.left = '200px';
+    win.style.outline = 'none';
+    win.style.minWidth = '700px';
+    win.style.minHeight = '500px';
+
+    win.innerHTML = `
+        <div class="os-window-header">
+            <span>CM斗地主</span>
+            <div class="window-controls-group">
+                <div class="win-ctrl-btn win-btn-min" title="最小化">—</div>
+                <div class="win-ctrl-btn win-btn-max" title="最大化/还原">□</div>
+                <div class="win-ctrl-btn win-btn-close" title="关闭">×</div>
+            </div>
+        </div>
+        <div class="os-window-body" style="position:relative;display:flex;flex-direction:column;overflow:hidden;background:#0d3b1e;color:#fff;font-family:system-ui,sans-serif;user-select:none;">
+            <div style="height:50px;background:rgba(0,0,0,0.3);display:flex;justify-content:space-between;align-items:center;padding:0 16px;flex-shrink:0;">
+                <div style="font-size:16px;font-weight:bold;">CM斗地主</div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <div id="ddz-player-count" style="font-size:11px;color:rgba(255,255,255,0.7);"></div>
+                    <button id="ddz-restart" style="padding:5px 12px;background:#e74c3c;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:12px;">重开</button>
+                </div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;position:relative;min-height:0;">
+                <div style="height:70px;display:flex;justify-content:space-between;align-items:center;padding:0 16px;flex-shrink:0;">
+                    <div id="ddz-p1-info" style="text-align:center;min-width:70px;font-size:12px;"></div>
+                    <div id="ddz-play-area" style="flex:1;display:flex;justify-content:center;align-items:center;gap:3px;min-height:50px;position:relative;"></div>
+                    <div id="ddz-p2-info" style="text-align:center;min-width:70px;font-size:12px;"></div>
+                </div>
+                <div style="flex:1;display:flex;justify-content:center;align-items:flex-end;padding-bottom:8px;position:relative;min-height:0;">
+                    <div id="ddz-hand-cards" style="display:flex;gap:2px;flex-wrap:wrap;justify-content:center;padding:8px;max-width:780px;overflow-y:auto;"></div>
+                    <div id="ddz-hand-count" style="position:absolute;bottom:4px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.5);font-size:11px;"></div>
+                </div>
+                <div id="ddz-bid-area" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:none;flex-direction:column;align-items:center;gap:8px;background:rgba(0,0,0,0.85);padding:20px 28px;border-radius:10px;z-index:100;border:1px solid rgba(255,255,255,0.2);">
+                    <div style="color:#fff;font-size:15px;margin-bottom:8px;font-weight:bold;">请叫分</div>
+                    <div style="color:rgba(255,255,255,0.7);font-size:12px;margin-bottom:6px;">当前最高分: <span id="ddz-current-bid" style="color:#f1c40f;font-weight:bold;">0</span></div>
+                    <div style="display:flex;gap:8px;">
+                        <button class="ddz-bid-btn" data-score="1" style="padding:6px 14px;background:#f39c12;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:13px;font-weight:bold;">1分</button>
+                        <button class="ddz-bid-btn" data-score="2" style="padding:6px 14px;background:#e67e22;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:13px;font-weight:bold;">2分</button>
+                        <button class="ddz-bid-btn" data-score="3" style="padding:6px 14px;background:#e74c3c;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:13px;font-weight:bold;">3分</button>
+                        <button class="ddz-bid-btn" data-score="0" style="padding:6px 14px;background:#7f8c8d;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:13px;font-weight:bold;">不叫</button>
+                    </div>
+                </div>
+            </div>
+            <div style="height:44px;background:rgba(0,0,0,0.3);display:flex;justify-content:center;align-items:center;gap:8px;padding:0 16px;flex-shrink:0;">
+                <button id="ddz-play-btn" style="padding:6px 18px;background:#27ae60;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:13px;opacity:0.5;" disabled>出牌</button>
+                <button id="ddz-pass-btn" style="padding:6px 18px;background:#95a5a6;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:13px;opacity:0.5;" disabled>不出</button>
+                <button id="ddz-hint-btn" style="padding:6px 18px;background:#3498db;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:13px;opacity:0.5;" disabled>提示</button>
+                <button id="ddz-clear-btn" style="padding:6px 18px;background:#e74c3c;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:13px;">清除</button>
+            </div>
+            <div id="ddz-status" style="position:absolute;bottom:48px;left:50%;transform:translateX(-50%);color:#f1c40f;font-size:13px;text-align:center;white-space:nowrap;z-index:10;pointer-events:none;"></div>
+            <div id="ddz-play-label" style="position:absolute;top:52px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.6);font-size:11px;text-align:center;pointer-events:none;"></div>
+            <div id="ddz-bottom-cards" style="position:absolute;top:4px;left:50%;transform:translateX(-50%);display:flex;gap:2px;pointer-events:none;"></div>
+        </div>
+        <div class="os-window-resize-handle"></div>
+    `;
+    shadow.appendChild(win);
+
+    // 窗口控制按钮
+    var header = win.querySelector('.os-window-header');
+    var body = win.querySelector('.os-window-body');
+    var minBtn = win.querySelector('.win-btn-min');
+    var maxBtn = win.querySelector('.win-btn-max');
+    var closeBtn = win.querySelector('.win-btn-close');
+
+    minBtn.onclick = function(e) { e.stopPropagation(); win.classList.add('minimized'); win.style.display = 'none'; addMinimizedItem(winId, '🃏 斗地主', win); };
+    maxBtn.onclick = function(e) { e.stopPropagation(); if (win.classList.contains('maximized')) { win.classList.remove('maximized'); win.style.width = '900px'; win.style.height = '700px'; win.style.top = '40px'; win.style.left = '200px'; } else { win.classList.add('maximized'); } };
+    closeBtn.onclick = function(e) { e.stopPropagation(); win.classList.add('closing'); setTimeout(function() { win.remove(); var mi = taskbarMinList.querySelector('[data-win-id="'+winId+'"]'); if (mi) mi.remove(); }, 250); };
+
+    // 拖拽
+    var isDragging = false, dragOffX = 0, dragOffY = 0;
+    header.addEventListener('mousedown', function(e) {
+        if (e.target.closest('.window-controls-group')) return;
+        if (win.classList.contains('maximized')) return;
+        isDragging = true;
+        var rect = win.getBoundingClientRect();
+        dragOffX = e.clientX - rect.left;
+        dragOffY = e.clientY - rect.top;
+        win.style.zIndex = ++zIndexCounter;
+    });
+    document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        win.style.left = (e.clientX - dragOffX) + 'px';
+        win.style.top = (e.clientY - dragOffY) + 'px';
+    });
+    document.addEventListener('mouseup', function() { isDragging = false; });
+    win.addEventListener('mousedown', function() { win.style.zIndex = ++zIndexCounter; win.focus(); });
+
+    // 缩放
+    var resizeHandle = win.querySelector('.os-window-resize-handle');
+    var isResizing = false;
+    if (resizeHandle) {
+        resizeHandle.addEventListener('mousedown', function(e) {
+            e.stopPropagation();
+            isResizing = true;
+            win.style.zIndex = ++zIndexCounter;
+        });
+        document.addEventListener('mousemove', function(e) {
+            if (!isResizing) return;
+            var rect = win.getBoundingClientRect();
+            var newW = e.clientX - rect.left;
+            var newH = e.clientY - rect.top;
+            if (newW > 450) win.style.width = newW + 'px';
+            if (newH > 300) win.style.height = newH + 'px';
+        });
+        document.addEventListener('mouseup', function() { isResizing = false; });
+    }
+
+    // DOM 引用
+    var DOM = {
+        p1Info: win.querySelector('#ddz-p1-info'),
+        p2Info: win.querySelector('#ddz-p2-info'),
+        playArea: win.querySelector('#ddz-play-area'),
+        handCards: win.querySelector('#ddz-hand-cards'),
+        playBtn: win.querySelector('#ddz-play-btn'),
+        passBtn: win.querySelector('#ddz-pass-btn'),
+        hintBtn: win.querySelector('#ddz-hint-btn'),
+        clearBtn: win.querySelector('#ddz-clear-btn'),
+        restartBtn: win.querySelector('#ddz-restart'),
+        playerCount: win.querySelector('#ddz-player-count'),
+        status: win.querySelector('#ddz-status'),
+        playLabel: win.querySelector('#ddz-play-label'),
+        bottomCards: win.querySelector('#ddz-bottom-cards'),
+        handCount: win.querySelector('#ddz-hand-count'),
+        bidArea: win.querySelector('#ddz-bid-area'),
+        currentBidSpan: win.querySelector('#ddz-current-bid'),
+    };
+
+    var SUITS = ['♠', '♥', '♦', '♣'];
+    var RANKS = ['3','4','5','6','7','8','9','10','J','Q','K','A','2'];
+    var JOKERS = [{suit:'🃏',rank:'小王',rankVal:16},{suit:'🃏',rank:'大王',rankVal:17}];
+    var totalPlayers = 3;
+
+    var gameState = {
+        players: [
+            { name: '你', cards: [], isHuman: true, isLandlord: false, score: 0 },
+            { name: 'AI-1', cards: [], isHuman: false, isLandlord: false, score: 0 },
+            { name: 'AI-2', cards: [], isHuman: false, isLandlord: false, score: 0 },
+        ],
+        currentPlayer: 0,
+        lastPlay: null,
+        passCount: 0,
+        gameOver: false,
+        isMyTurn: false,
+        selectedIndices: new Set(),
+        landlordIdx: -1,
+        phase: 'bidding',
+        bidScores: [0, 0, 0],
+        currentBid: 0,
+        bidPassCount: 0,
+        bidWinner: -1,
+        bottom: [],
+    };
+    // 绑定到全局防止丢失
+    win._ddzGameState = gameState;
+
+    function getCardDisplay(c) {
+        var color = (c.suit === '♥' || c.suit === '♦') ? 'red' : '#000';
+        return '<div style="width:32px;height:44px;background:#fff;border:1px solid #333;border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;cursor:pointer;user-select:none;color:' + color + ';">' + c.suit + '<br>' + c.rank + '</div>';
+    }
+
+    function getPlayType(cards) {
+        if (!cards || cards.length === 0) return null;
+        var sorted = cards.slice().sort(function(a, b) { return a.rankVal - b.rankVal; });
+        var len = sorted.length;
+        if (len === 2 && sorted[0].rankVal === 16 && sorted[1].rankVal === 17) return { type: 'rocket', value: 100, cards: sorted, length: 2 };
+        var counts = {};
+        sorted.forEach(function(c) { counts[c.rankVal] = (counts[c.rankVal] || 0) + 1; });
+        var countVals = Object.values(counts);
+        var uniqueVals = Object.keys(counts).map(Number).sort(function(a, b) { return a - b; });
+        if (len === 4 && countVals[0] === 4) return { type: 'bomb', value: uniqueVals[0], cards: sorted, length: 4 };
+        if (len === 1) return { type: 'single', value: sorted[0].rankVal, cards: sorted, length: 1 };
+        if (len === 2 && countVals[0] === 2) return { type: 'pair', value: uniqueVals[0], cards: sorted, length: 2 };
+        if (len === 3 && countVals[0] === 3) return { type: 'triple', value: uniqueVals[0], cards: sorted, length: 3 };
+        if (len === 4 && countVals.includes(3) && countVals.includes(1)) {
+            var tripleVal = uniqueVals.find(function(v) { return counts[v] === 3; });
+            return { type: 'triple_single', value: tripleVal, cards: sorted, length: 4 };
+        }
+        // 3+2 三带二（已有，确认正常）
+        if (len === 5 && countVals.includes(3) && countVals.includes(2)) {
+            var tripleVal = uniqueVals.find(function(v) { return counts[v] === 3; });
+            return { type: 'triple_pair', value: tripleVal, cards: sorted, length: 5 };
+        }
+        // 4+2 四带二单张（新增！）
+        if (len === 6 && countVals.includes(4) && countVals.filter(function(c) { return c === 1; }).length === 2) {
+            var quadVal = uniqueVals.find(function(v) { return counts[v] === 4; });
+            return { type: 'quad_single', value: quadVal, cards: sorted, length: 6 };
+        }
+        // 4+2 四带一对（已有）
+        if (len === 6 && countVals.includes(4) && countVals.includes(2)) {
+            var quadVal = uniqueVals.find(function(v) { return counts[v] === 4; });
+            return { type: 'quad_pair', value: quadVal, cards: sorted, length: 6 };
+        }
+        // 4+2*2 四带两对（已有）
+        if (len === 8 && countVals.includes(4) && countVals.filter(function(c) { return c === 2; }).length === 2) {
+            var quadVal = uniqueVals.find(function(v) { return counts[v] === 4; });
+            return { type: 'quad_two_pair', value: quadVal, cards: sorted, length: 8 };
+        }
+        if (len === 5 && countVals.includes(3) && countVals.includes(2)) {
+            var tripleVal = uniqueVals.find(function(v) { return counts[v] === 3; });
+            return { type: 'triple_pair', value: tripleVal, cards: sorted, length: 5 };
+        }
+        if (len >= 5 && countVals.every(function(c) { return c === 1; }) && uniqueVals[len - 1] - uniqueVals[0] === len - 1 && uniqueVals[len - 1] < 15) {
+            return { type: 'straight', value: uniqueVals[0], cards: sorted, length: len };
+        }
+        if (len >= 6 && len % 2 === 0 && countVals.every(function(c) { return c === 2; })) {
+            var pairs = uniqueVals.filter(function(v) { return counts[v] === 2; });
+            if (pairs.length >= 3 && pairs[pairs.length - 1] - pairs[0] === pairs.length - 1 && pairs[pairs.length - 1] < 15) {
+                return { type: 'straight_pair', value: pairs[0], cards: sorted, length: len };
+            }
+        }
+        if (len >= 6 && countVals.filter(function(c) { return c === 3; }).length >= 2) {
+            var triples = uniqueVals.filter(function(v) { return counts[v] === 3; }).sort(function(a, b) { return a - b; });
+            if (triples.length >= 2 && triples[triples.length - 1] - triples[0] === triples.length - 1 && triples[triples.length - 1] < 15) {
+                var extra = sorted.filter(function(c) { return counts[c.rankVal] !== 3; });
+                if (extra.length === 0) return { type: 'plane', value: triples[0], cards: sorted, length: len };
+                if (extra.length === triples.length && extra.every(function(c) { return counts[c.rankVal] === 1; })) {
+                    return { type: 'plane_single', value: triples[0], cards: sorted, length: len };
+                }
+                if (extra.length === triples.length * 2 && extra.every(function(c) { return counts[c.rankVal] === 2; })) {
+                    return { type: 'plane_pair', value: triples[0], cards: sorted, length: len };
+                }
+            }
+        }
+        if (len === 6 && countVals.includes(4) && countVals.includes(2)) {
+            var quadVal = uniqueVals.find(function(v) { return counts[v] === 4; });
+            return { type: 'quad_pair', value: quadVal, cards: sorted, length: 6 };
+        }
+        if (len === 8 && countVals.includes(4) && countVals.filter(function(c) { return c === 2; }).length === 2) {
+            var quadVal = uniqueVals.find(function(v) { return counts[v] === 4; });
+            return { type: 'quad_two_pair', value: quadVal, cards: sorted, length: 8 };
+        }
+        return null;
+    }
+
+    function canBeat(last, current) {
+        if (current.type === 'rocket') return true;
+        if (current.type === 'bomb') {
+            if (last.type === 'rocket') return false;
+            if (last.type === 'bomb') return current.value > last.value;
+            return true;
+        }
+        if (last.type === 'rocket' || last.type === 'bomb') return false;
+        if (current.type !== last.type) return false;
+        if (current.length !== last.length) return false;
+        return current.value > last.value;
+    }
+
+    function findAllPlays(cards) {
+        var plays = [];
+        var counts = {};
+        cards.forEach(function(c) { counts[c.rankVal] = (counts[c.rankVal] || 0) + 1; });
+        var uniqueVals = Object.keys(counts).map(Number).sort(function(a, b) { return a - b; });
+        cards.forEach(function(c) { plays.push({ type: 'single', value: c.rankVal, cards: [c], length: 1 }); });
+        uniqueVals.forEach(function(v) {
+            if (counts[v] >= 2) {
+                var cs = cards.filter(function(c) { return c.rankVal === v; }).slice(0, 2);
+                plays.push({ type: 'pair', value: v, cards: cs, length: 2 });
+            }
+            if (counts[v] >= 3) {
+                var cs = cards.filter(function(c) { return c.rankVal === v; }).slice(0, 3);
+                plays.push({ type: 'triple', value: v, cards: cs, length: 3 });
+            }
+        });
+        for (var i = 0; i < cards.length - 1; i++) {
+            for (var j = i + 1; j < cards.length; j++) {
+                if (cards[i].rankVal === 16 && cards[j].rankVal === 17) {
+                    plays.push({ type: 'rocket', value: 100, cards: [cards[i], cards[j]], length: 2 });
+                }
+            }
+        }
+        uniqueVals.forEach(function(v) {
+            if (counts[v] === 4) {
+                var cs = cards.filter(function(c) { return c.rankVal === v; });
+                plays.push({ type: 'bomb', value: v, cards: cs, length: 4 });
+            }
+        });
+                // 三带一 (3+1)
+        uniqueVals.forEach(function(v) {
+            if (counts[v] === 3) {
+                var triple = cards.filter(function(c) { return c.rankVal === v; });
+                var others = cards.filter(function(c) { return c.rankVal !== v; });
+                for (var i = 0; i < others.length; i++) {
+                    plays.push({ type: 'triple_single', value: v, cards: triple.concat([others[i]]), length: 4 });
+                }
+            }
+        });
+
+        // 三带二 (3+2)
+        uniqueVals.forEach(function(v) {
+            if (counts[v] === 3) {
+                var triple = cards.filter(function(c) { return c.rankVal === v; });
+                uniqueVals.forEach(function(v2) {
+                    if (v2 !== v && counts[v2] >= 2) {
+                        var pair = cards.filter(function(c) { return c.rankVal === v2; }).slice(0, 2);
+                        plays.push({ type: 'triple_pair', value: v, cards: triple.concat(pair), length: 5 });
+                    }
+                });
+            }
+        });
+
+        // 四带二单张 (4+2)
+        uniqueVals.forEach(function(v) {
+            if (counts[v] === 4) {
+                var quad = cards.filter(function(c) { return c.rankVal === v; });
+                var others = cards.filter(function(c) { return c.rankVal !== v; });
+                for (var i = 0; i < others.length - 1; i++) {
+                    for (var j = i + 1; j < others.length; j++) {
+                        plays.push({ type: 'quad_single', value: v, cards: quad.concat([others[i], others[j]]), length: 6 });
+                    }
+                }
+            }
+        });
+
+        // 四带一对 (4+1对)
+        uniqueVals.forEach(function(v) {
+            if (counts[v] === 4) {
+                var quad = cards.filter(function(c) { return c.rankVal === v; });
+                uniqueVals.forEach(function(v2) {
+                    if (v2 !== v && counts[v2] >= 2) {
+                        var pair = cards.filter(function(c) { return c.rankVal === v2; }).slice(0, 2);
+                        plays.push({ type: 'quad_pair', value: v, cards: quad.concat(pair), length: 6 });
+                    }
+                });
+            }
+        });
+
+        // 四带两对 (4+2*2)
+        uniqueVals.forEach(function(v) {
+            if (counts[v] === 4) {
+                var quad = cards.filter(function(c) { return c.rankVal === v; });
+                var pairVals = uniqueVals.filter(function(v2) { return v2 !== v && counts[v2] >= 2; });
+                for (var i = 0; i < pairVals.length - 1; i++) {
+                    for (var j = i + 1; j < pairVals.length; j++) {
+                        var pair1 = cards.filter(function(c) { return c.rankVal === pairVals[i]; }).slice(0, 2);
+                        var pair2 = cards.filter(function(c) { return c.rankVal === pairVals[j]; }).slice(0, 2);
+                        plays.push({ type: 'quad_two_pair', value: v, cards: quad.concat(pair1, pair2), length: 8 });
+                    }
+                }
+            }
+        });
+        return plays;
+    }
+
+    function renderPlayerInfos() {
+        var p0 = gameState.players[0];
+        var p1 = gameState.players[1];
+        var p2 = gameState.players[2];
+        if (DOM.p1Info) DOM.p1Info.innerHTML = '<div style="font-size:13px;font-weight:bold;">' + p1.name + '</div><div style="font-size:11px;">' + (p1.isLandlord ? '👑地主' : '农民') + '</div><div style="font-size:11px;">' + p1.cards.length + '张</div>';
+        if (DOM.p2Info) DOM.p2Info.innerHTML = '<div style="font-size:13px;font-weight:bold;">' + p2.name + '</div><div style="font-size:11px;">' + (p2.isLandlord ? '👑地主' : '农民') + '</div><div style="font-size:11px;">' + p2.cards.length + '张</div>';
+        if (DOM.playerCount) DOM.playerCount.textContent = '你: ' + p0.cards.length + '张';
+    }
+
+    function renderPlayArea(label, cards, playerName, effect) {
+        if (!DOM.playArea) return;
+        var html = '';
+        if (label) html += '<div style="position:absolute;top:2px;font-size:10px;color:rgba(255,255,255,0.6);">' + label + '</div>';
+        var cardHtml = cards.map(function(c) { return getCardDisplay(c); }).join('');
+        var effectStyle = '';
+        if (effect === 'bomb') effectStyle = 'animation: ddzBomb 0.5s ease;';
+        if (effect === 'plane') effectStyle = 'animation: ddzPlane 0.5s ease;';
+        html += '<div style="display:flex;gap:2px;' + effectStyle + '">' + cardHtml + '</div>';
+        DOM.playArea.innerHTML = html;
+    }
+
+    function renderHand() {
+        if (!DOM.handCards) return;
+        var p = gameState.players[0];
+        DOM.handCards.innerHTML = '';
+        p.cards.forEach(function(c, idx) {
+            var isSelected = gameState.selectedIndices.has(idx);
+            var div = document.createElement('div');
+            div.style.cssText = 'width:36px;height:48px;background:#fff;border:2px solid ' + (isSelected ? '#f1c40f' : '#333') + ';border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;cursor:pointer;user-select:none;transform:' + (isSelected ? 'translateY(-6px)' : 'none') + ';transition:all 0.1s;' + ((c.suit === '♥' || c.suit === '♦') ? 'color:red;' : 'color:#000;');
+            div.innerHTML = c.suit + '<br>' + c.rank;
+            div.addEventListener('click', function() {
+                if (!gameState.isMyTurn || gameState.gameOver || gameState.phase !== 'playing') return;
+                if (gameState.selectedIndices.has(idx)) gameState.selectedIndices.delete(idx);
+                else gameState.selectedIndices.add(idx);
+                renderHand();
+            });
+            DOM.handCards.appendChild(div);
+        });
+        if (DOM.handCount) DOM.handCount.textContent = p.cards.length + ' 张';
+    }
+
+    function renderBottomCards() {
+        if (!DOM.bottomCards) return;
+        DOM.bottomCards.innerHTML = gameState.bottom.map(function(c) {
+            var color = (c.suit === '♥' || c.suit === '♦') ? 'red' : '#000';
+            return '<div style="width:26px;height:36px;background:#fff;border:1px solid #333;border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:9px;' + (color === 'red' ? 'color:red;' : 'color:#000;') + '">' + c.suit + '<br>' + c.rank + '</div>';
+        }).join('');
+    }
+
+    function disableAllButtons() {
+        if (DOM.playBtn) { DOM.playBtn.disabled = true; DOM.playBtn.style.opacity = '0.5'; }
+        if (DOM.passBtn) { DOM.passBtn.disabled = true; DOM.passBtn.style.opacity = '0.5'; }
+        if (DOM.hintBtn) { DOM.hintBtn.disabled = true; DOM.hintBtn.style.opacity = '0.5'; }
+    }
+
+    function enablePlayerButtons() {
+        if (DOM.playBtn) { DOM.playBtn.disabled = false; DOM.playBtn.style.opacity = '1'; }
+        if (DOM.passBtn) { DOM.passBtn.disabled = false; DOM.passBtn.style.opacity = '1'; }
+        if (DOM.hintBtn) { DOM.hintBtn.disabled = false; DOM.hintBtn.style.opacity = '1'; }
+    }
+
+    function updateTurn() {
+        if (gameState.gameOver) return;
+        var p = gameState.players[gameState.currentPlayer];
+        if (!p) return;
+        if (p.isHuman) {
+            gameState.isMyTurn = true;
+            enablePlayerButtons();
+            if (DOM.status) DOM.status.textContent = '轮到你了，请出牌！';
+        } else {
+            gameState.isMyTurn = false;
+            disableAllButtons();
+            if (DOM.status) DOM.status.textContent = p.name + ' 思考中...';
+            setTimeout(function() { aiTurn(); }, 600);
+        }
+        renderPlayerInfos();
+    }
+
+    function nextPlayer() {
+        gameState.currentPlayer = (gameState.currentPlayer + 1) % totalPlayers;
+        updateTurn();
+    }
+
+    function aiTurn() {
+        if (gameState.gameOver) return;
+        var p = gameState.players[gameState.currentPlayer];
+        if (!p) return;
+        var lastInfo = gameState.lastPlay && gameState.lastPlay.playerIdx !== gameState.currentPlayer
+            ? { type: gameState.lastPlay.type, value: gameState.lastPlay.value, length: gameState.lastPlay.length || 1 }
+            : null;
+        var allPlays = findAllPlays(p.cards);
+        var bestPlay = null;
+        if (!lastInfo) {
+            if (allPlays.length > 0) {
+                allPlays.sort(function(a, b) { return a.value - b.value; });
+                bestPlay = allPlays[0];
+            }
+        } else {
+            var candidates = allPlays.filter(function(play) { return canBeat(lastInfo, play); });
+            if (candidates.length > 0) {
+                candidates.sort(function(a, b) { return a.value - b.value; });
+                bestPlay = candidates[0];
+            }
+        }
+        if (bestPlay) {
+            bestPlay.cards.forEach(function(c) {
+                var idx = p.cards.indexOf(c);
+                if (idx !== -1) p.cards.splice(idx, 1);
+            });
+            gameState.lastPlay = { playerIdx: gameState.currentPlayer, cards: bestPlay.cards, type: bestPlay.type, value: bestPlay.value, length: bestPlay.length || 1 };
+            gameState.passCount = 0;
+            var effect = (bestPlay.type === 'bomb' || bestPlay.type === 'rocket') ? 'bomb' : (bestPlay.type === 'plane' || bestPlay.type === 'plane_single' || bestPlay.type === 'plane_pair') ? 'plane' : null;
+            renderPlayArea(p.name + ' 出了 ' + bestPlay.cards.length + ' 张', bestPlay.cards, p.name, effect);
+            if (DOM.status) DOM.status.textContent = p.name + ' 出了 ' + bestPlay.cards.length + ' 张';
+            if (p.cards.length === 0) {
+                gameState.gameOver = true;
+                var winText = p.isLandlord ? '地主赢了！' : '农民赢了！';
+                if (DOM.status) DOM.status.textContent = winText;
+                disableAllButtons();
+                renderPlayerInfos();
+                return;
+            }
+            renderPlayerInfos();
+            setTimeout(function() { nextPlayer(); }, 600);
+        } else {
+            gameState.passCount++;
+            gameState.currentPlayer = (gameState.currentPlayer + 1) % totalPlayers;
+            if (gameState.passCount >= 2) {
+                gameState.lastPlay = null;
+                gameState.passCount = 0;
+            }
+            renderPlayArea('不出', [], p.name);
+            if (DOM.status) DOM.status.textContent = p.name + ' 不出';
+            setTimeout(function() { updateTurn(); }, 400);
+        }
+    }
+
+    function playCards() {
+        if (!gameState.isMyTurn || gameState.gameOver || gameState.phase !== 'playing') {
+            if (DOM.status) DOM.status.textContent = '还没轮到你！';
+            return;
+        }
+        var p = gameState.players[0];
+        if (!p) {
+            if (DOM.status) DOM.status.textContent = '错误：玩家数据丢失，请点击"重开"';
+            return;
+        }
+        var selected = [];
+        gameState.selectedIndices.forEach(function(idx) { if (idx < p.cards.length) selected.push(p.cards[idx]); });
+        if (selected.length === 0) {
+            if (DOM.status) DOM.status.textContent = '请先选牌！';
+            return;
+        }
+        var play = getPlayType(selected);
+        if (!play) {
+            if (DOM.status) DOM.status.textContent = '❌ 无效的牌型！';
+            return;
+        }
+        if (gameState.lastPlay && gameState.lastPlay.playerIdx !== 0) {
+            var lastInfo = { type: gameState.lastPlay.type, value: gameState.lastPlay.value, length: gameState.lastPlay.length || 1 };
+            if (!canBeat(lastInfo, play)) {
+                if (DOM.status) DOM.status.textContent = '❌ 打不过上家！';
+                return;
+            }
+        }
+        var played = play.cards;
+        play.cards.forEach(function(c) {
+            var idx = p.cards.indexOf(c);
+            if (idx !== -1) p.cards.splice(idx, 1);
+        });
+        gameState.lastPlay = { playerIdx: 0, cards: played, type: play.type, value: play.value, length: play.length || 1 };
+        gameState.passCount = 0;
+        gameState.selectedIndices.clear();
+        var effect = (play.type === 'bomb' || play.type === 'rocket') ? 'bomb' : (play.type === 'plane' || play.type === 'plane_single' || play.type === 'plane_pair') ? 'plane' : null;
+        renderPlayArea('你出了 ' + play.cards.length + ' 张', played, '你', effect);
+        if (DOM.status) DOM.status.textContent = '你出了 ' + play.cards.length + ' 张';
+        if (p.cards.length === 0) {
+            gameState.gameOver = true;
+            if (DOM.status) DOM.status.textContent = '🎉 你赢了！';
+            disableAllButtons();
+            renderPlayerInfos();
+            renderHand();
+            return;
+        }
+        renderHand();
+        renderPlayerInfos();
+        setTimeout(function() { nextPlayer(); }, 500);
+    }
+
+    function passTurn() {
+        if (!gameState.isMyTurn || gameState.gameOver || gameState.phase !== 'playing') {
+            if (DOM.status) DOM.status.textContent = '还没轮到你！';
+            return;
+        }
+        if (!gameState.lastPlay || gameState.lastPlay.playerIdx === 0) {
+            if (DOM.status) DOM.status.textContent = '你是首家，必须出牌！';
+            return;
+        }
+        gameState.passCount++;
+        gameState.currentPlayer = (gameState.currentPlayer + 1) % totalPlayers;
+        if (gameState.passCount >= 2) {
+            gameState.lastPlay = null;
+            gameState.passCount = 0;
+        }
+        gameState.selectedIndices.clear();
+        renderHand();
+        renderPlayArea('不出', [], gameState.players[0].name);
+        if (DOM.status) DOM.status.textContent = '你选择了不出';
+        updateTurn();
+    }
+
+    function getHint() {
+        if (!gameState.isMyTurn || gameState.gameOver || gameState.phase !== 'playing') {
+            if (DOM.status) DOM.status.textContent = '还没轮到你！';
+            return;
+        }
+        var p = gameState.players[0];
+        var lastInfo = gameState.lastPlay && gameState.lastPlay.playerIdx !== 0 ? { type: gameState.lastPlay.type, value: gameState.lastPlay.value, length: gameState.lastPlay.length || 1 } : null;
+        var allPlays = findAllPlays(p.cards);
+        if (allPlays.length === 0) {
+            if (DOM.status) DOM.status.textContent = '没有能出的牌，试试不出';
+            return;
+        }
+        var candidates = allPlays;
+        if (lastInfo) candidates = allPlays.filter(function(play) { return canBeat(lastInfo, play); });
+        if (candidates.length === 0) {
+            if (DOM.status) DOM.status.textContent = '没有能出的牌，试试不出';
+            return;
+        }
+        candidates.sort(function(a, b) { return a.value - b.value; });
+        var hintPlay = candidates[0];
+        var indices = hintPlay.cards.map(function(c) { return p.cards.indexOf(c); }).filter(function(idx) { return idx !== -1; });
+        gameState.selectedIndices = new Set(indices);
+        renderHand();
+        if (DOM.status) DOM.status.textContent = '💡 提示出 ' + hintPlay.cards.length + ' 张 (' + hintPlay.type + ')';
+    }
+
+    function clearSelection() {
+        gameState.selectedIndices.clear();
+        renderHand();
+        if (DOM.status) DOM.status.textContent = '已取消选牌';
+    }
+
+    function showBidUI() {
+        if (DOM.bidArea) DOM.bidArea.style.display = 'flex';
+        updateBidButtons();
+    }
+
+    function hideBidUI() {
+        if (DOM.bidArea) DOM.bidArea.style.display = 'none';
+    }
+
+    function updateBidButtons() {
+        if (DOM.currentBidSpan) DOM.currentBidSpan.textContent = gameState.currentBid;
+        var buttons = DOM.bidArea.querySelectorAll('.ddz-bid-btn');
+        buttons.forEach(function(btn) {
+            var score = parseInt(btn.dataset.score);
+            if (score > 0 && score <= gameState.currentBid) {
+                btn.disabled = true;
+                btn.style.opacity = '0.3';
+                btn.style.cursor = 'not-allowed';
+            } else {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+            }
+        });
+    }
+
+    function handleBid(score) {
+        var cp = gameState.currentPlayer;
+        gameState.bidScores[cp] = score;
+        if (score > gameState.currentBid) {
+            gameState.currentBid = score;
+            gameState.bidWinner = cp;
+        }
+        if (score === 0) gameState.bidPassCount++;
+        var p = gameState.players[cp];
+        if (DOM.status) DOM.status.textContent = p.name + ' ' + (score === 0 ? '不叫' : '叫 ' + score + ' 分');
+        if (gameState.bidPassCount >= 2 && gameState.bidWinner !== -1) {
+            finishBidding();
+            return;
+        }
+        if (gameState.currentBid === 3) {
+            finishBidding();
+            return;
+        }
+        if (gameState.bidPassCount >= 3) {
+            finishBidding();
+            return;
+        }
+        gameState.currentPlayer = (gameState.currentPlayer + 1) % totalPlayers;
+        if (gameState.players[gameState.currentPlayer].isHuman) {
+            updateBidButtons();
+            if (DOM.status) DOM.status.textContent = '轮到你了，当前最高分 ' + gameState.currentBid + ' 分';
+        } else {
+            updateBidButtons();
+            setTimeout(function() { aiBid(); }, 800);
+        }
+    }
+
+    function aiBid() {
+        var cp = gameState.currentPlayer;
+        var p = gameState.players[cp];
+        var counts = {};
+        p.cards.forEach(function(c) { counts[c.rankVal] = (counts[c.rankVal] || 0) + 1; });
+        var hasBomb = Object.values(counts).some(function(c) { return c === 4; });
+        var hasRocket = p.cards.some(function(c) { return c.rankVal === 16; }) && p.cards.some(function(c) { return c.rankVal === 17; });
+        var highCards = p.cards.filter(function(c) { return c.rankVal >= 14; }).length;
+        var score = 0;
+        if (hasRocket || (hasBomb && highCards >= 3)) score = Math.min(3, gameState.currentBid + 1);
+        else if (hasBomb || highCards >= 4) score = Math.min(2, gameState.currentBid + 1);
+        else if (highCards >= 2 && gameState.currentBid < 1) score = 1;
+        if (score <= gameState.currentBid) score = 0;
+        handleBid(score);
+    }
+
+    function finishBidding() {
+        hideBidUI();
+        if (gameState.bidWinner === -1) {
+            if (DOM.status) DOM.status.textContent = '所有人都没叫分，重新发牌...';
+            setTimeout(function() { startGame(); }, 1500);
+            return;
+        }
+        gameState.landlordIdx = gameState.bidWinner;
+        gameState.players[gameState.landlordIdx].isLandlord = true;
+        gameState.players[gameState.landlordIdx].cards.push.apply(gameState.players[gameState.landlordIdx].cards, gameState.bottom);
+        gameState.players[gameState.landlordIdx].cards.sort(function(a, b) { return a.rankVal - b.rankVal; });
+        gameState.currentPlayer = gameState.landlordIdx;
+        gameState.phase = 'playing';
+        gameState.lastPlay = null;
+        gameState.passCount = 0;
+        renderPlayerInfos();
+        renderHand();
+        renderBottomCards();
+        if (DOM.playLabel) DOM.playLabel.textContent = gameState.players[gameState.landlordIdx].name + ' 是地主！';
+        if (DOM.status) DOM.status.textContent = '游戏开始！地主先出牌';
+        updateTurn();
+    }
+
+    function startGame() {
+        gameState.players.forEach(function(p) { p.cards = []; p.isLandlord = false; p.score = 0; });
+        var deck = [];
+        for (var s = 0; s < SUITS.length; s++) {
+            for (var i = 0; i < RANKS.length; i++) {
+                deck.push({ suit: SUITS[s], rank: RANKS[i], rankVal: i + 3 });
+            }
+        }
+        deck.push.apply(deck, JOKERS);
+        for (var i = deck.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var tmp = deck[i]; deck[i] = deck[j]; deck[j] = tmp;
+        }
+        var cardsPerPlayer = 17;
+        var idx = 0;
+        for (var p = 0; p < totalPlayers; p++) {
+            gameState.players[p].cards = deck.slice(idx, idx + cardsPerPlayer);
+            idx += cardsPerPlayer;
+        }
+        gameState.bottom = deck.slice(idx);
+        gameState.players.forEach(function(p) { p.cards.sort(function(a, b) { return a.rankVal - b.rankVal; }); });
+        gameState.currentPlayer = 0;
+        gameState.lastPlay = null;
+        gameState.passCount = 0;
+        gameState.gameOver = false;
+        gameState.selectedIndices = new Set();
+        gameState.isMyTurn = false;
+        gameState.landlordIdx = -1;
+        gameState.phase = 'bidding';
+        gameState.bidScores = [0, 0, 0];
+        gameState.currentBid = 0;
+        gameState.bidPassCount = 0;
+        gameState.bidWinner = -1;
+        disableAllButtons();
+        renderPlayerInfos();
+        renderHand();
+        if (DOM.playLabel) DOM.playLabel.textContent = '';
+        if (DOM.playArea) DOM.playArea.innerHTML = '';
+        if (DOM.bottomCards) DOM.bottomCards.innerHTML = '';
+        if (DOM.status) DOM.status.textContent = '发牌完成，开始叫分...';
+        showBidUI();
+    }
+
+    // 事件绑定
+    if (DOM.playBtn) DOM.playBtn.addEventListener('click', playCards);
+    if (DOM.passBtn) DOM.passBtn.addEventListener('click', passTurn);
+    if (DOM.hintBtn) DOM.hintBtn.addEventListener('click', getHint);
+    if (DOM.clearBtn) DOM.clearBtn.addEventListener('click', clearSelection);
+    if (DOM.restartBtn) DOM.restartBtn.addEventListener('click', function() {
+        if (gameState.gameOver || confirm('重新开始？')) startGame();
+    });
+    DOM.bidArea.querySelectorAll('.ddz-bid-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() { handleBid(parseInt(btn.dataset.score)); });
+    });
+    win.addEventListener('keydown', function(e) {
+        if (gameState.phase !== 'playing') return;
+        var k = e.key.toLowerCase();
+        if (k === ' ' || k === 'enter') { e.preventDefault(); if (!DOM.playBtn.disabled) playCards(); }
+        else if (k === 'p') { e.preventDefault(); if (!DOM.passBtn.disabled) passTurn(); }
+        else if (k === 'h') { e.preventDefault(); if (!DOM.hintBtn.disabled) getHint(); }
+        else if (k === 'c') { e.preventDefault(); clearSelection(); }
+        else if (k === 'r') { e.preventDefault(); if (gameState.gameOver || confirm('重新开始？')) startGame(); }
+    });
+
+    // 动画样式
+    var animStyle = document.createElement('style');
+    animStyle.textContent = '@keyframes ddzBomb { 0% { transform: scale(1); } 50% { transform: scale(1.3); } 100% { transform: scale(1); } } @keyframes ddzPlane { 0% { transform: translateX(0); } 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } 100% { transform: translateX(0); } }';
+    win.appendChild(animStyle);
+
+    startGame();
+    setTimeout(function() { win.focus(); }, 100);
+}
     function openXiangqiGame() {
         const winId = 'game-xiangqi';
         if (osFindWindow(winId)) { osBringToFront(osFindWindow(winId)); return; }
@@ -10515,8 +11293,10 @@ OS_DATA.settingsOpen = true;
         if (!OS_DATA.entertainment) OS_DATA.entertainment = { files: [], folders: [] };
         if (!OS_DATA.entertainment.files) OS_DATA.entertainment.files = [];
         if (!OS_DATA.entertainment.folders) OS_DATA.entertainment.folders = [];
-
-        const all = [...OS_DATA.entertainment.folders, ...OS_DATA.entertainment.files];
+        const fixedGames = [
+            { id: 'fixed-ddz', name: '斗地主.gm', type: 'gm', appType: 'doudizhu' }
+        ];
+        const all = [...fixedGames, ...OS_DATA.entertainment.folders, ...OS_DATA.entertainment.files];
 
         if (all.length === 0) {
             content.innerHTML = `<div style="width:100%;text-align:center;color:${t.textSecondary};padding:40px;font-size:14px;">暂无内容<br>点击"新建文件夹"整理，或运行 .gm 应用</div>`;
@@ -10549,6 +11329,7 @@ OS_DATA.settingsOpen = true;
                 else if (item.appType === 'minesweeper') openMinesweeperGame();
                 else if (item.appType === 'goban') openGobanGame();
                 else if (item.appType === 'xiangqi') openXiangqiGame();
+                else if (item.appType === 'doudizhu') openDouDiZhuGame();
             };
 
             el.oncontextmenu = (e) => {
