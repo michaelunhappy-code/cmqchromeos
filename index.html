@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN">
+
+<head>
+
+<meta charset="UTF-8" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<title>Chrome OS (apilio) - Web OS 脚本发布页</title>
+
+<style>
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;background: #0d1117;color: #c9d1d9;line-height: 1.6;user-select: none;-webkit-user-select: none;-moz-user-select: none;-ms-user-select: none;}
+
+.container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+
+#auth-layer {position: fixed;inset: 0;background: #0d1117;display: flex;align-items: center;justify-content: center;z-index: 9999;}
+
+#auth-box {background: #161b22;border: 1px solid #30363d;border-radius: 16px;padding: 40px 36px;max-width: 420px;width: 90%;text-align: center;}
+
+#auth-box h2 {color: #f0f6fc;margin-bottom: 8px;font-size: 1.6em;}
+
+#auth-box p {color: #8b949e;margin-bottom: 24px;font-size: 0.95em;}
+
+#auth-box input[type="password"] {width: 100%;padding: 12px 16px;background: #0d1117;border: 1px solid #30363d;border-radius: 8px;color: #c9d1d9;font-size: 1em;outline: none;transition: border-color 0.2s;user-select: text;-webkit-user-select: text;}
+
+#auth-box input[type="password"]:focus { border-color: #58a6ff; }
+
+#auth-box input:disabled { opacity: 0.4; cursor: not-allowed; }
+
+#auth-box .btn-auth {margin-top: 16px;padding: 10px 24px;background: #1f6feb;color: white;border: none;border-radius: 8px;font-size: 1em;font-weight: 600;cursor: pointer;transition: background 0.2s;}
+
+#auth-box .btn-auth:hover:not(:disabled) { background: #388bfd; }
+
+#auth-box .btn-auth:disabled { opacity: 0.4; cursor: not-allowed; }
+
+#auth-error {color: #f85149;font-size: 0.9em;margin-top: 12px;min-height: 1.5em;}
+
+#main-content { display: none; }
+
+.terms-wrap {max-height: 400px;overflow-y: auto;border: 1px solid #30363d;background: #0d1117;padding: 16px;border-radius: 8px;margin: 16px 0;}
+
+.terms-wrap h3 {color: #f0f6fc;margin: 12px 0 8px;font-size: 1.05em;}
+
+.terms-wrap p, .terms-wrap li {color: #8b949e;font-size: 0.9em;margin-bottom: 8px;}
+
+.terms-wrap ul { padding-left: 20px; margin: 8px 0; }
+
+.terms-agree-row {display: flex;align-items: center;gap: 10px;margin-top: 16px;padding-top: 16px;border-top: 1px dashed #30363d;}
+
+.terms-tip { color: #f0883e; font-size: 0.9em; margin-top: 8px; }
+
+.locked-hint {text-align: center;padding: 30px 0;color: #8b949e;font-size: 1em;}
+
+.download-install-area { display: none; }
+
+.download-install-area.unlock { display: block; }
+
+.hero {text-align: center;padding: 60px 0 40px;border-bottom: 1px solid #30363d;margin-bottom: 40px;}
+
+.hero h1 {font-size: 2.5em;background: linear-gradient(135deg, #58a6ff, #a371f7);-webkit-background-clip: text;-webkit-text-fill-color: transparent;margin-bottom: 12px;}
+
+.hero .subtitle { color: #8b949e; font-size: 1.1em; }
+
+.hero .badge {display: inline-block;margin-top: 16px;padding: 6px 14px;background: #238636;color: white;border-radius: 20px;font-size: 0.85em;font-weight: 600;}
+
+.card {background: #161b22;border: 1px solid #30363d;border-radius: 12px;padding: 28px;margin-bottom: 24px;transition: border-color 0.2s;}
+
+.card:hover { border-color: #484f58; }
+
+.card h2 {color: #f0f6fc;margin-bottom: 16px;font-size: 1.3em;display: flex;align-items: center;gap: 10px;}
+
+.feature-grid {display: grid;grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));gap: 16px;margin-top: 16px;}
+
+.feature-item {background: #0d1117;padding: 16px;border-radius: 8px;border: 1px solid #21262d;}
+
+.feature-item h4 { color: #58a6ff; margin-bottom: 6px; font-size: 0.95em; }
+
+.feature-item p { color: #8b949e; font-size: 0.88em; line-height: 1.5; }
+
+.version-section { margin-bottom: 16px; }
+
+.version-section h3 {color: #f0883e;font-size: 1em;margin-bottom: 12px;padding-left: 8px;border-left: 3px solid #f0883e;}
+
+.version-list { display: flex; flex-direction: column; gap: 10px; }
+
+.version-item {display: flex;align-items: center;justify-content: space-between;background: #0d1117;padding: 14px 18px;border-radius: 8px;border: 1px solid #21262d;transition: all 0.2s;gap: 12px;}
+
+.version-item:hover {border-color: #58a6ff;transform: translateX(4px);}
+
+.version-info {display: flex;align-items: center;gap: 12px;flex: 1;min-width: 0;}
+
+.version-tag {padding: 4px 10px;border-radius: 6px;font-size: 0.75em;font-weight: 700;text-transform: uppercase;flex-shrink: 0;}
+
+.tag-insider {background: #f0883e20;color: #f0883e;border: 1px solid #f0883e40;}
+
+.tag-stable {background: #23863620;color: #3fb950;border: 1px solid #23863640;}
+
+.version-name {font-weight: 600;color: #f0f6fc;word-break: break-word;}
+
+.version-meta {color: #8b949e;font-size: 0.85em;margin-top: 2px;}
+
+.btn-group { display: flex; gap: 8px; flex-shrink: 0; }
+
+.btn {padding: 8px 16px;border-radius: 6px;text-decoration: none;font-size: 0.85em;font-weight: 600;transition: all 0.2s;border: none;cursor: pointer;display: inline-flex;align-items: center;gap: 6px;white-space: nowrap;}
+
+.btn-primary {background: #1f6feb;color: white;}
+
+.btn-primary:hover { background: #388bfd; }
+
+.btn-secondary {background: #21262d;color: #c9d1d9;border: 1px solid #30363d;}
+
+.btn-secondary:hover { background: #30363d; }
+
+.btn-demo {
+    background: linear-gradient(135deg, #58a6ff, #a371f7);
+    color: white;
+}
+.btn-demo:hover {
+    opacity: 0.9;
+}
+
+.steps { counter-reset: step; }
+
+.step {position: relative;padding-left: 48px;margin-bottom: 20px;}
+
+.step::before {counter-increment: step;content: counter(step);position: absolute;left: 0;top: 0;width: 32px;height: 32px;background: #1f6feb;color: white;border-radius: 50%;display: flex;align-items: center;justify-content: center;font-weight: 700;font-size: 0.9em;}
+
+.step h4 { color: #f0f6fc; margin-bottom: 6px; }
+
+.step p { color: #8b949e; font-size: 0.9em; }
+
+.footer {text-align: center;padding: 40px 0;color: #484f58;font-size: 0.85em;border-top: 1px solid #30363d;margin-top: 40px;}
+
+.demo-card {
+    text-align: center;
+    padding: 24px 20px;
+}
+
+@media (max-width: 600px) {
+
+.hero h1 { font-size: 1.8em; }
+
+.version-item { flex-direction: column; align-items: flex-start; }
+
+.version-info { width: 100%; }
+
+.btn-group { width: 100%; }
+
+.btn { flex: 1; justify-content: center; }
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<script>
+
+document.addEventListener('keydown', e => {
+
+if (e.ctrlKey && e.key.toLowerCase() === 's') {
+
+e.preventDefault();
+
+}
+
+});
+
+</script>
+
+<div id="auth-layer">
+
+<div id="auth-box">
+
+<h2>🔐 访问验证</h2>
+
+<p>请输入密码以查看脚本发布页</p>
+
+<input type="password" id="password-input" placeholder="输入密码" autocomplete="current-password" />
+
+<br />
+
+<button class="btn-auth" id="auth-btn">确认</button>
+
+<div id="auth-error"></div>
+
+</div>
+
+</div>
+
+<div id="main-content">
+
+<div class="container">
+
+<div class="hero">
+
+<h1>🖥️ Chrome OS (apilio)</h1>
+
+<p class="subtitle">网页模拟桌面系统 (Web OS) - Tampermonkey 用户脚本</p>
+
+</div>
+
+<div class="card">
+
+<h2>📖 项目介绍</h2>
+
+<p style="color:#8b949e; margin-bottom:16px;">浏览器端虚拟桌面油猴脚本，安装后任意网页右下角唤起桌面模式，内置文件管理、代码编译、AI对话、Office 导出等功能。</p>
+
+<div class="feature-grid">
+
+<div class="feature-item"><h4>🗂️ 文件管理</h4><p>支持 txt/cpp/md/docx/xlsx，拖拽上传、新建、重命名、删除</p></div>
+
+<div class="feature-item"><h4>💻 代码编辑</h4><p>VSCode 编辑器，C++ 在线编译、代码片段自动补全</p></div>
+
+<div class="feature-item"><h4>🤖 AI 对话</h4><p>Markdown 渲染、对话上下文、多模型切换</p></div>
+
+<div class="feature-item"><h4>🎨 个性化</h4><p>7 套主题、明暗切换、窗口记忆、锁屏密码</p></div>
+
+<div class="feature-item"><h4>📦 Office 支持</h4><p>导出标准 Word / Excel 文档</p></div>
+
+<div class="feature-item"><h4>📞 投诉侵权(请提供盗用，冒充等信息)</h4><p>邮箱: cuimoqi@163.com   电话: +86 171 1217 1226</p></div>
+
+</div>
+
+</div>
+
+<div class="card">
+
+<h2>⚠️ 使用责任声明（必须完整阅读并同意后方可下载脚本）</h2>
+
+<div class="terms-wrap" id="termsScrollBox">
+
+<h3>用户使用协议 2026.8.11 版本</h3>
+
+<p><strong>总则</strong></p>
+
+<p>1.本协议为使用者与本脚本创作者崔秣齐之间有效的使用约定。当您安装、运行、调用本网页模拟桌面系统脚本全部或者任意一项功能时，即代表您已经完整阅读、充分理解并且无条件同意本协议全部条款；如果您不认可协议内任意内容，请立刻卸载脚本并停止一切使用行为。</p>
+
+<p>2.本脚本由个人独立开发，免费开放，仅可用于个人学习以及娱乐，不提供任何商业化服务，创作者无法永久保证脚本运行稳定、所有功能完整可用，脚本各项功能会跟随开发进度持续迭代优化。</p>
+
+<p><strong>功能相关免责</strong></p>
+
+<p>3.脚本内置画板、文件管理器、窗口拖拽、本地存储模块、网络交互模块等部分功能尚未开发完成，存在程序缺陷、未知漏洞。使用者清楚知晓，使用未完善功能有可能发生画布内容丢失、绘图记录闪退、文件无法正常保存、界面卡顿崩溃、操作逻辑异常等各类问题。</p>
+
+<p>4.创作者不会强制任何人使用画板等测试性功能。若使用者主动选择使用尚未完工的功能，所有绘图素材、自定义文档、个人创作内容发生损坏、丢失所带来的全部损失，均由使用者自行承担，创作者没有义务为测试功能的数据提供备份与恢复服务。</p>
+
+<p>5.严禁利用未完善功能存在的缺陷，批量创建大量垃圾画布、生成海量无效绘图文件，恶意占用浏览器本地存储空间；禁止反复刻意触发画板各类程序漏洞，主动制造脚本持续崩溃、页面卡死等情况。</p>
+
+<p><strong>禁止行为规范</strong></p>
+
+<p>6.不允许对本脚本进行逆向解析、反编译、二次打包，删除、遮盖、篡改原作者署名信息，冒充原作者对外发布各类衍生修改版本；未经创作者书面许可，禁止将脚本整体或者部分内容用于商业引流、付费售卖以及任何盈利场景。</p>
+
+<p>7.禁止主动挖掘、探测脚本各类漏洞，并且利用漏洞实施以下行为：持续输入超长文本、特殊控制符号、恶意格式内容，尝试造成脚本卡死、浏览器页面崩溃；依托脚本内置功能发送骚扰信息、造谣、辱骂他人、传播违法违规内容；私自篡改脚本本地存储数据，伪造系统运行记录、虚假报错信息；通过自动化手段循环重复调用各项功能，对页面进行持续性压力测试。</p>
+
+<p>8.不允许修改脚本源代码，植入恶意运行逻辑，再将改动后的版本传播给其他不知情使用者。</p>
+
+<p>9.禁止利用脚本模拟桌面窗口、自定义界面伪装成正规平台、官方客服界面，欺骗、诱导其他网络用户。</p>
+
+<p><strong>数据与本地存储约定</strong></p>
+
+<p>10.脚本内部创建的本地文件、画板绘图内容全部保存在浏览器本地存储空间，创作者无法远程访问、获取使用者在脚本内建立的任何文件、绘画素材、文字记录。</p>
+
+<p>11.清理浏览器缓存、卸载油猴插件、更换浏览器、清除站点数据都会直接清空全部画板资料、自建文档等本地数据。使用者需要自行手动备份重要内容，创作者不承担任何数据丢失相关责任。</p>
+
+<p><strong>用户责任与违规处理</strong></p>
+
+<p>12.一旦确认使用者存在恶意攻击程序、刻意滥用漏洞、持续施压程序运行、传播篡改版本等违规行为，创作者有权发布相关公告记录违规情况，并且可以在后续脚本更新版本内新增限制规则，限制对应违规行为正常使用脚本相关功能。</p>
+
+<p>13.使用者如果因为违反本协议各项条款，造成浏览器运行故障、电子设备卡顿、本地数据丢失，或是引发和第三方平台、其他网络用户之间的纠纷，由此产生的所有责任全部由使用者独立承担，创作者无需承担任何赔偿以及相关连带责任。</p>
+
+<p><strong>版权、协议更新说明</strong></p>
+
+<p>14.脚本源代码、界面视觉设计、桌面交互整套逻辑著作权归属原作者崔秣齐所有。允许个人出于学习目的参考代码片段，禁止直接完整搬运整套项目，冒充为自身原创作品对外发布。</p>
+
+<p>15.创作者拥有随时更新脚本程序、新增功能、移除功能、调整已有功能的权利，可以临时下线画板等不稳定测试功能，无需提前通知所有使用者。</p>
+
+<p>16.本用户协议内容会跟随脚本版本持续补充、调整优化，脚本新版本上线之后，更新后的协议自动生效，使用者继续运行脚本即代表接受最新版本协议。</p>
+
+<p><strong>风险补充告知</strong></p>
+
+<p>17.本项目属于青少年个人学习开发项目，安全防护标准达不到商业软件水平，请不要在脚本画板、记事本等功能内填写手机号码、家庭住址、账号密码等各类敏感隐私信息，防范信息意外泄露的风险。</p>
+
+<p>18.使用者如果发现脚本漏洞，合理方式为友善向原作者提交BUG反馈。以测试漏洞作为借口，持续刻意制造程序异常、反复试探程序极限不属于正常反馈行为，直接认定为违规操作。</p>
+
+<p>19.本脚本所有资料存储在localStorage中（约5MB），存储进度条只是大致估测，如因存储内容过多导致数据丢失，由使用者自行承担。</p>
+
+<p>20.若您下载Insider版本，其中的某些功能可能无法正常使用，还未开发完毕，请及时做好数据备份，以免丢失。</p>
+
+<p style="margin-top:12px;">开发者：崔秣齐<br/>2026.8.11</p>
+
+</div>
+
+<div class="terms-agree-row">
+
+<input type="checkbox" id="agreeTerms" />
+
+<label for="agreeTerms">我已完整阅读并完全同意以上全部使用责任声明</label>
+
+</div>
+
+<div class="terms-tip" id="termsTip">请滚动阅读完整条款并勾选同意，解锁版本下载与安装教程</div>
+
+</div>
+
+<div class="download-install-area" id="downloadInstallWrap">
+
+<div class="card demo-card">
+    <h2>🖱️ 在线 Demo 体验</h2>
+    <p style="margin-bottom:16px;color:#8b949e;">无需安装油猴脚本，直接打开网页预览桌面系统效果</p>
+    <a href="https://michaelunhappy-code.github.io/demo-trial" target="_blank" class="btn btn-demo">🚀 前往尝试 Demo</a>
+</div>
+
+<div class="card">
+
+<h2>📦 版本下载</h2>
+
+<div class="version-section">
+
+<h3>🔥 Insider 预览版（4.0 - 5.2，如需更高版本请发邮/致电cuimoqi）</h3>
+
+<div class="version-list" id="insider-list"></div>
+
+</div>
+
+<div class="version-section" style="margin-top: 24px;">
+
+<h3>✅ 稳定版</h3>
+
+<div class="version-list" id="stable-list"></div>
+
+</div>
+
+</div>
+
+<div class="card">
+
+<h2>🚀 安装步骤</h2>
+
+<div class="steps">
+
+<div class="step">
+
+<h4>安装 Tampermonkey 油猴扩展</h4>
+
+<p>Chrome / Edge / Firefox 应用商店安装扩展</p>
+
+</div>
+
+<div class="step">
+
+<h4>新建空白脚本</h4>
+
+<p>油猴管理面板左上角加号创建脚本</p>
+
+</div>
+
+<div class="step">
+
+<h4>粘贴完整代码</h4>
+
+<p>复制页面下载链接打开，全选复制代码粘贴编辑器</p>
+
+</div>
+
+<div class="step">
+
+<h4>自定义 AI 接口（可选）</h4>
+
+<p>替换内置 api.apilio.ai 为自己的 API 地址</p>
+
+</div>
+
+<div class="step">
+
+<h4>保存启用</h4>
+
+<p>Ctrl+S 保存，刷新网页右下角出现桌面入口即成功</p>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="locked-hint" id="lockedHint">🔒 下载与安装功能已锁定，请先完整滚动阅读《使用责任声明》并勾选同意</div>
+
+<div class="footer">© 2026 Chrome OS (apilio) · 所有版本均开源</div>
+
+</div>
+
+</div>
+
+<script>
+
+(() => {
+
+const PASSWORD_HASH = '5e1ed39c5baacf15b454fd03061adfcc4260c8f5bc8c6ab518a2cf7d8d378677';
+
+const LOCK_DURATION = 5;
+
+const CONFIG = {
+
+owner: "michaelunhappy-code",
+
+repo: "michaelunhappy-code.github.io",
+
+branch: "main",
+
+insiderVersions: ["4.0","4.1","4.2","4.3","4.4","4.5","4.6","4.7","4.8","4.9","5.0","5.1","5.2"],
+
+stableVersions: ["3.0"]
+
+};
+
+const authLayer = document.getElementById('auth-layer');
+
+const mainContent = document.getElementById('main-content');
+
+const passwordInput = document.getElementById('password-input');
+
+const authBtn = document.getElementById('auth-btn');
+
+const authError = document.getElementById('auth-error');
+
+const termsScrollBox = document.getElementById('termsScrollBox');
+
+const agreeTermsCheckbox = document.getElementById('agreeTerms');
+
+const downloadInstallWrap = document.getElementById('downloadInstallWrap');
+
+const lockedHint = document.getElementById('lockedHint');
+
+const termsTip = document.getElementById('termsTip');
+
+let lockTimer = null;
+
+let isLocked = false;
+
+let scrolledToBottom = false;
+
+function hex(buffer) {
+
+return [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, '0')).join('');
+
+}
+
+async function sha256(text) {
+
+const data = new TextEncoder().encode(text);
+
+const digest = await crypto.subtle.digest('SHA-256', data);
+
+return hex(digest);
+
+}
+
+function startLockCountdown() {
+
+isLocked = true;
+
+passwordInput.disabled = true;
+
+authBtn.disabled = true;
+
+let t = LOCK_DURATION;
+
+authError.textContent = `❌ 密码错误，请 ${t} 秒后重试`;
+
+lockTimer = setInterval(() => {
+
+t--;
+
+if (t <= 0) {
+
+clearInterval(lockTimer);
+
+lockTimer = null;
+
+isLocked = false;
+
+passwordInput.disabled = false;
+
+authBtn.disabled = false;
+
+authError.textContent = "";
+
+passwordInput.value = "";
+
+passwordInput.focus();
+
+} else {
+
+authError.textContent = `❌ 密码错误，请 ${t} 秒后重试`;
+
+}
+
+}, 1000);
+
+}
+
+async function verifyPassword() {
+
+if (isLocked) return;
+
+const val = passwordInput.value.trim();
+
+if (!val) {
+
+authError.textContent = "请输入密码";
+
+return;
+
+}
+
+try {
+
+const hashResult = await sha256(val);
+
+if (hashResult === PASSWORD_HASH) {
+
+authLayer.style.display = "none";
+
+mainContent.style.display = "block";
+
+document.body.style.overflow = "auto";
+
+} else {
+
+startLockCountdown();
+
+}
+
+} catch (err) {
+
+authError.textContent = "密码校验失败，请刷新页面重试";
+
+console.error(err);
+
+}
+
+}
+
+function getCDN(path) {
+
+return `https://cdn.jsdelivr.net/gh/${CONFIG.owner}/${CONFIG.repo}@${CONFIG.branch}/${path}`;
+
+}
+
+async function copyLink(url) {
+
+try {
+
+await navigator.clipboard.writeText(url);
+
+alert("链接复制成功：\n" + url);
+
+} catch {
+
+prompt("复制失败，请手动复制：", url);
+
+}
+
+}
+
+function makeVersionItem({ tag, fname, url, meta, latest = false }) {
+
+const div = document.createElement('div');
+
+div.className = 'version-item';
+
+div.innerHTML = `<div class="version-info"><span class="version-tag ${tag === 'Insider' ? 'tag-insider' : 'tag-stable'}">${tag}</span><div><div class="version-name">${fname}${latest ? ' <span style="color:#f0883e;">👈 当前最新</span>' : ''}</div><div class="version-meta">${meta}</div></div></div><div class="btn-group"><button class="btn btn-secondary btn-copy" type="button">📋 复制链接</button><a href="${url}" target="_blank" class="btn btn-primary" download>⬇️ 下载</a></div>`;
+
+div.querySelector('.btn-copy').addEventListener('click', () => copyLink(url));
+
+return div;
+
+}
+
+function renderVersions() {
+
+const insiderList = document.getElementById("insider-list");
+
+const stableList = document.getElementById("stable-list");
+
+insiderList.innerHTML = "";
+
+stableList.innerHTML = "";
+
+CONFIG.insiderVersions.forEach(v => {
+
+const latest = v === "5.2";
+
+const fname = `Chrome OS(apilio) ${v} insider.js`;
+
+const url = getCDN(`versions/insider/${encodeURIComponent(fname)}`);
+
+insiderList.appendChild(makeVersionItem({tag: 'Insider',fname,url,meta: '更新于2026 · Tampermonkey 专用',latest}));
+
+});
+
+CONFIG.stableVersions.forEach(v => {
+
+const fname = `Chrome OS(apilio) ${v}.js`;
+
+const url = getCDN(`versions/stable/${encodeURIComponent(fname)}`);
+
+stableList.appendChild(makeVersionItem({tag: 'Stable',fname,url,meta: '长期稳定支持版本'}));
+
+});
+
+}
+
+function updateTermsUI() {
+
+if (agreeTermsCheckbox.checked && scrolledToBottom) {
+
+downloadInstallWrap.classList.add('unlock');
+
+lockedHint.style.display = 'none';
+
+} else {
+
+downloadInstallWrap.classList.remove('unlock');
+
+lockedHint.style.display = 'block';
+
+}
+
+}
+
+authBtn.addEventListener('click', verifyPassword);
+
+passwordInput.addEventListener('keydown', e => {
+
+if (e.key === 'Enter') verifyPassword();
+
+});
+
+window.addEventListener('load', () => {
+
+passwordInput.focus();
+
+});
+
+termsScrollBox.addEventListener('scroll', () => {
+
+const reachBottom = termsScrollBox.scrollTop + termsScrollBox.clientHeight >= termsScrollBox.scrollHeight - 10;
+
+if (reachBottom && !scrolledToBottom) {
+
+scrolledToBottom = true;
+
+termsTip.textContent = "已阅读全部条款，请勾选同意框解锁下载";
+
+termsTip.style.color = "#3fb950";
+
+updateTermsUI();
+
+}
+
+});
+
+agreeTermsCheckbox.addEventListener('change', () => {
+
+if (agreeTermsCheckbox.checked && !scrolledToBottom) {
+
+termsTip.textContent = "请先滚动至条款底部完整阅读后再勾选";
+
+termsTip.style.color = "#f0883e";
+
+}
+
+updateTermsUI();
+
+});
+
+renderVersions();
+
+})();
+
+</script>
+
+</body>
+
+</html>
